@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+sqlalchemy
+python-multipart
+# Alembic
+alembic
+SQLAlchemy
+# Add python-dotenv to requirements
+python-dotenv

@@ -1,0 +1,23 @@
+from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy.ext.declarative import declarative_base
+from enum import Enum
+
+Base = declarative_base()
+
+class ComicGenre(str, Enum):
+    ACTION = "Action"
+    ADVENTURE = "Adventure"
+    FANTASY = "Fantasy"
+    HORROR = "Horror"
+    ROMANCE = "Romance"
+    SCIFI = "Sci-Fi"
+    MYSTERY = "Mystery"
+    OTHER = "Other"
+
+class Comic(Base):
+    __tablename__ = "comics"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True)
+    description = Column(Text)
+    genres = Column(String, index=True)  # Comma-separated genres
+    pdf_path = Column(String)
