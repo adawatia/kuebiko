@@ -1,46 +1,20 @@
-import os
-import uuid
-from typing import List
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.exceptions import RequestValidationError as FastAPIRequestValidationError
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from models import Comic, ComicGenre, Base
-from schemas import ComicUpdate, ComicOut, ComicCreate
-from database import engine, SessionLocal
+from sqlalchemy import or_
+from app.db import SessionLocal
+from app.models import Comic, ComicGenre
+from app.schemas import ComicCreate, ComicUpdate, ComicOut, ComicListResponse
+from typing import List, Optional
+import math
+import uuid
+import os
 
-
-
+router = APIRouter(prefix="/comics", tags=["comics"])
 
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
-Base.metadata.create_all(bind=engine)
-
-
-
-app = FastAPI()
-
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to the Comic API"}
-
-# Global error handler for validation errors
-@app.exception_handler(FastAPIRequestValidationError)
-async def validation_exception_handler(request, exc):
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": exc.errors(), "body": exc.body},
-    )
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 def get_db():
     db = SessionLocal()
@@ -49,31 +23,18 @@ def get_db():
     finally:
         db.close()
 
-
-
-# --- CRUD with JSON payloads ---
-@app.post(
-    "/comics/",
-    response_model=ComicOut,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create a new comic",
-    description="Create a new comic with metadata as JSON. Use /comics/{comic_id}/pdf to upload PDF after creation.",
-)
+@router.post("/", response_model=ComicOut, status_code=status.HTTP_201_CREATED)
 def create_comic(
     comic: ComicCreate,
     db: Session = Depends(get_db)
 ):
-    genre_objs = []
-    for g in comic.genres:
-        try:
-            genre_objs.append(ComicGenre(g))
-        except Exception:
-            raise HTTPException(status_code=400, detail=f"Invalid genre: {g}")
+    """Create a new comic with JSON payload. Use POST /comics/{comic_id}/pdf to upload PDF separately."""
+    
     try:
         comic_db = Comic(
             title=comic.title,
             description=comic.description,
-            genres=','.join([g.value for g in genre_objs]),
+            genres=','.join([g.value for g in comic.genres]),
             pdf_path=None
         )
         db.add(comic_db)
@@ -84,30 +45,68 @@ def create_comic(
             title=comic_db.title,
             description=comic_db.description,
             genres=genre_objs,
-            pdf_path=comic_db.pdf_path
+            pdf_path=comic_db.pdf_path or ""
         )
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to create comic: {str(e)}")
 
-@app.get("/comics/", response_model=List[ComicOut])
-def list_comics(db: Session = Depends(get_db)):
+@router.get("/", response_model=ComicListResponse)
+def list_comics(
+    page: int = Query(1, ge=1, description="Page number"),
+    items_per_page: int = Query(10, ge=1, le=100, alias="per_page", description="Items per page"),
+    genres: Optional[List[str]] = Query(None, description="Filter by genres (OR logic)"),
+    search: Optional[str] = Query(None, description="Search title or description"),
+    db: Session = Depends(get_db)
+):
     try:
-        comics = db.query(Comic).all()
-        result = []
+        query = db.query(Comic)
+        
+        # Apply Search
+        if search:
+            search_query = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Comic.title.ilike(search_query),
+                    Comic.description.ilike(search_query)
+                )
+            )
+        
+        # Apply Genres Filter (at least one genre must match)
+        if genres:
+            genre_filters = [Comic.genres.contains(g) for g in genres]
+            query = query.filter(or_(*genre_filters))
+            
+        total_items = query.count()
+        total_pages = math.ceil(total_items / items_per_page)
+        
+        offset = (page - 1) * items_per_page
+        comics = query.offset(offset).limit(items_per_page).all()
+        
+        items = []
         for comic in comics:
             genre_list = [ComicGenre(g) for g in comic.genres.split(',') if g]
-            result.append(ComicOut(
+            items.append(ComicOut(
                 id=comic.id,
                 title=comic.title,
                 description=comic.description,
                 genres=genre_list,
                 pdf_path=comic.pdf_path
             ))
-        return result
+            
+        return ComicListResponse(
+            items=items,
+            total_comics=total_items,
+            total_pages=total_pages,
+            current_page=page,
+            items_per_page=items_per_page,
+            next_page_available=page < total_pages,
+            prev_page_available=page > 1
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch comics: {str(e)}")
 
-@app.get("/comics/{comic_id}", response_model=ComicOut)
+@router.get("/{comic_id}", response_model=ComicOut)
 def get_comic(comic_id: int, db: Session = Depends(get_db)):
     comic = db.query(Comic).filter(Comic.id == comic_id).first()
     if not comic:
@@ -121,33 +120,33 @@ def get_comic(comic_id: int, db: Session = Depends(get_db)):
         pdf_path=comic.pdf_path
     )
 
-@app.get("/comics/{comic_id}/pdf")
+@router.get("/{comic_id}/pdf")
 def download_comic_pdf(comic_id: int, db: Session = Depends(get_db)):
+    """Download the PDF file for a comic."""
     comic = db.query(Comic).filter(Comic.id == comic_id).first()
     if not comic:
         raise HTTPException(status_code=404, detail="Comic not found")
     if not comic.pdf_path or not os.path.exists(comic.pdf_path):
         raise HTTPException(status_code=404, detail="PDF not found")
     try:
-        return FileResponse(comic.pdf_path, media_type="application/pdf", filename=os.path.basename(comic.pdf_path))
+        return FileResponse(
+            comic.pdf_path, 
+            media_type="application/pdf", 
+            filename=os.path.basename(comic.pdf_path)
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to download PDF: {str(e)}")
 
-@app.put("/comics/{comic_id}", response_model=ComicOut)
+@router.put("/{comic_id}", response_model=ComicOut)
 def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends(get_db)):
+    """Update comic metadata."""
     comic = db.query(Comic).filter(Comic.id == comic_id).first()
     if not comic:
         raise HTTPException(status_code=404, detail="Comic not found")
     try:
         update_data = comic_update.dict(exclude_unset=True)
         if "genres" in update_data and update_data["genres"] is not None:
-            genre_objs = []
-            for g in update_data["genres"]:
-                try:
-                    genre_objs.append(ComicGenre(g))
-                except Exception:
-                    raise HTTPException(status_code=400, detail=f"Invalid genre: {g}")
-            comic.genres = ','.join([g.value for g in genre_objs])
+            comic.genres = ','.join([g.value for g in update_data["genres"]])
             update_data.pop("genres")
         for key, value in update_data.items():
             setattr(comic, key, value)
@@ -159,60 +158,92 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
             title=comic.title,
             description=comic.description,
             genres=genre_list,
-            pdf_path=comic.pdf_path
+            pdf_path=comic.pdf_path or ""
         )
+    except HTTPException:
+        raise
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to update comic: {str(e)}")
-# --- PDF upload endpoint ---
-@app.post("/comics/{comic_id}/pdf", status_code=200, summary="Upload PDF for a comic", description="Upload or replace the PDF file for a comic.")
+
+@router.post("/{comic_id}/pdf", status_code=200)
 async def upload_comic_pdf(
     comic_id: int,
     pdf: UploadFile = File(..., description="PDF file of the comic."),
     db: Session = Depends(get_db)
 ):
+    """Upload or replace the PDF file for a comic."""
     comic = db.query(Comic).filter(Comic.id == comic_id).first()
     if not comic:
         raise HTTPException(status_code=404, detail="Comic not found")
+    
     if not pdf.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
+    
     contents = await pdf.read()
     if len(contents) == 0:
         raise HTTPException(status_code=400, detail="Uploaded PDF is empty.")
+    
     max_size = 10 * 1024 * 1024  # 10MB
     if len(contents) > max_size:
         raise HTTPException(status_code=400, detail="PDF file too large (max 10MB).")
+    
     if not contents.startswith(b'%PDF'):
         raise HTTPException(status_code=400, detail="File is not a valid PDF.")
+    
     pdf_filename = f"{uuid.uuid4()}_{os.path.basename(pdf.filename)}"
     pdf_path = os.path.join(UPLOAD_DIR, pdf_filename)
+    
+    old_pdf_path = comic.pdf_path
     try:
-        # Remove old PDF if exists
-        if comic.pdf_path and os.path.exists(comic.pdf_path):
-            os.remove(comic.pdf_path)
+        # Write new PDF
         with open(pdf_path, "wb") as buffer:
             buffer.write(contents)
+        
+        # Update database
         comic.pdf_path = pdf_path
         db.commit()
         db.refresh(comic)
+        
+        # Remove old PDF if exists (after successful commit)
+        if old_pdf_path and os.path.exists(old_pdf_path):
+            try:
+                os.remove(old_pdf_path)
+            except Exception:
+                pass  # Don't fail if old file can't be deleted
+        
         return {"ok": True, "pdf_path": pdf_path}
     except Exception as e:
+        # Cleanup new file if database update failed
         if os.path.exists(pdf_path):
-            os.remove(pdf_path)
+            try:
+                os.remove(pdf_path)
+            except Exception:
+                pass
+        db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to upload PDF: {str(e)}")
 
-@app.delete("/comics/{comic_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{comic_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_comic(comic_id: int, db: Session = Depends(get_db)):
+    """Delete a comic and its associated PDF file."""
     comic = db.query(Comic).filter(Comic.id == comic_id).first()
     if not comic:
         raise HTTPException(status_code=404, detail="Comic not found")
+    
+    pdf_path = comic.pdf_path
     try:
-        if comic.pdf_path and os.path.exists(comic.pdf_path):
-            try:
-                os.remove(comic.pdf_path)
-            except Exception:
-                pass
         db.delete(comic)
         db.commit()
+        
+        # Remove PDF file after successful database deletion
+        if pdf_path and os.path.exists(pdf_path):
+            try:
+                os.remove(pdf_path)
+            except Exception:
+                pass  # Don't fail if file can't be deleted
+        
         return
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to delete comic: {str(e)}")
+
