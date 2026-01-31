@@ -59,7 +59,7 @@ The API will be available at `http://localhost:8000`
 | GET | `/comics/{id}` | Get comic details |
 | PUT | `/comics/{id}` | Update comic metadata |
 | DELETE | `/comics/{id}` | Delete comic |
-| POST | `/comics/{id}/pdf` | Upload PDF file |
+| POST | `/comics/{id}/pdf` | Upload or Update PDF file |
 | GET | `/comics/{id}/pdf` | Download PDF file |
 
 ## Example Usage
