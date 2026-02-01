@@ -15,6 +15,32 @@ A modern RESTful API for managing comics and their PDF files, built with FastAPI
 - ✅ **Error Handling** - Comprehensive error handling with proper status codes
 - ✅ **Database Migrations** - Alembic for schema management
 
+## Authentication
+
+The API uses JWT authentication. 
+
+### User Types
+1. **Admin (Superuser)**: Can manage comics (create, update, delete, upload PDF).
+2. **User**: Can view and read comics.
+
+### Setup
+To create an admin user, run the helper script:
+```bash
+python create_superuser.py
+```
+
+### API Endpoints
+- **Register**: `POST /auth/register` (Create regular user)
+- **Login**: `POST /auth/jwt/login` (Get access token)
+- **Logout**: `POST /auth/jwt/logout`
+- **Comics**: `/comics` (See API docs for details)
+
+### Swagger UI
+Navigate to `http://localhost:8000/docs`.
+- Click "Authorize" button.
+- Login with your credentials.
+- Test the endpoints.
+
 ## Quick Start
 
 ### Installation
@@ -50,24 +76,37 @@ The API will be available at `http://localhost:8000`
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/` | API welcome message |
-| GET | `/health` | Health check |
-| POST | `/comics/` | Create a new comic |
-| GET | `/comics/` | List all comics |
-| GET | `/comics/{id}` | Get comic details |
-| PUT | `/comics/{id}` | Update comic metadata |
-| DELETE | `/comics/{id}` | Delete comic |
-| POST | `/comics/{id}/pdf` | Upload or Update PDF file |
-| GET | `/comics/{id}/pdf` | Download PDF file |
+## API Endpoints
+
+| Method | Endpoint | Description | Access |
+|--------|----------|-------------|--------|
+| GET | `/` | API welcome message | Public |
+| GET | `/health` | Health check | Public |
+| POST | `/auth/register` | Register new user | Public |
+| POST | `/auth/jwt/login` | Login (Get Token) | Public |
+| GET | `/comics/` | List all comics | Authenticated |
+| GET | `/comics/{id}` | Get comic details | Authenticated |
+| GET | `/comics/{id}/pdf` | Download PDF file | Authenticated |
+| POST | `/comics/` | Create a new comic | **Admin** |
+| PUT | `/comics/{id}` | Update comic metadata | **Admin** |
+| DELETE | `/comics/{id}` | Delete comic | **Admin** |
+| POST | `/comics/{id}/pdf` | Upload or Update PDF file | **Admin** |
 
 ## Example Usage
 
-### Create a Comic
+### 1. Login & Get Token
+```bash
+# Returns access_token
+curl -X POST "http://localhost:8000/auth/jwt/login" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=admin@admin.com&password=admin"
+```
+
+### 2. Create a Comic (Admin)
 ```bash
 curl -X POST "http://localhost:8000/comics/" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your_access_token>" \
   -d '{
     "title": "Spider-Man",
     "description": "Amazing adventures",
@@ -75,15 +114,17 @@ curl -X POST "http://localhost:8000/comics/" \
   }'
 ```
 
-### Upload PDF
+### 3. Upload PDF (Admin)
 ```bash
 curl -X POST "http://localhost:8000/comics/1/pdf" \
+  -H "Authorization: Bearer <your_access_token>" \
   -F "pdf=@comic.pdf"
 ```
 
-### Get All Comics
+### 4. Get All Comics (User/Admin)
 ```bash
-curl "http://localhost:8000/comics/"
+curl "http://localhost:8000/comics/" \
+  -H "Authorization: Bearer <your_access_token>"
 ```
 
 ## Available Genres

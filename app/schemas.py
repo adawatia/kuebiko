@@ -53,3 +53,14 @@ class ComicListResponse(BaseModel):
     next_page_available: bool = Field(..., description="True if there is a next page")
     prev_page_available: bool = Field(..., description="True if there is a previous page")
 
+from fastapi_users import schemas
+
+class UserRead(schemas.BaseUser[int]):
+    pass
+
+class UserCreate(schemas.BaseUserCreate):
+    pass
+
+class UserUpdate(schemas.BaseUserUpdate):
+    pass
+
