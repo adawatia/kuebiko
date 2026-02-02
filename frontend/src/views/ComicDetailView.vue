@@ -731,7 +731,85 @@ const handleUploadCover = async (event: Event) => {
     width: auto;
 }
 
+/* Reader Controls */
+.zoom-controls, .pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.btn-icon {
+    background: transparent;
+    border: none;
+    color: #fff;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+    font-size: 1.2rem;
+}
+
+.btn-icon:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.15);
+    transform: scale(1.1);
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+}
+
+.btn-icon:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.close-btn {
+    color: #aaa;
+}
+
+.close-btn:hover {
+    background: rgba(255, 59, 48, 0.15);
+    color: #ff3b30;
+}
+
+.btn-text {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #ccc;
+    font-size: 0.75rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 500;
+}
+
+.btn-text:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.zoom-label, .page-counter {
+    font-family: 'JetBrains Mono', monospace; /* Monospace for steady numbers */
+    color: #aaa;
+    font-size: 0.9rem;
+    min-width: 40px;
+    text-align: center;
+    font-weight: 500;
+    user-select: none;
+}
+
+.page-counter {
+    min-width: 80px;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.3rem 0.8rem;
+    border-radius: 20px;
+}
+
 .pdf-wrapper {
     box-shadow: 0 0 50px rgba(0,0,0,0.8);
+    transition: width 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 </style>
