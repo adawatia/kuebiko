@@ -185,6 +185,7 @@ const getGenreBadgeColor = (genre: string) => {
     padding-top: 1rem;
     max-width: 1400px;
     margin: 0 auto;
+    padding-bottom: 8rem;
 }
 
 /* Header Section */
@@ -205,9 +206,12 @@ h1 {
     font-weight: 800;
     background: linear-gradient(135deg, #fff 0%, #aaa 100%);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
     letter-spacing: -0.03em;
 }
+
+
 
 /* Search Bar */
 .search-bar input {
@@ -342,6 +346,7 @@ h3 {
     margin-bottom: 1.8rem;
     display: -webkit-box;
     -webkit-line-clamp: 3;
+    line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
     flex: 1;
@@ -361,13 +366,25 @@ h3 {
 }
 
 /* Pagination */
+/* Pagination - Floating Navigation */
 .pagination {
-    margin-top: 4rem;
-    margin-bottom: 2rem;
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(20, 20, 20, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 0.8rem 2rem;
+    border-radius: 50px;
     display: flex;
     justify-content: center;
     align-items: center;
     gap: 1.5rem;
+    z-index: 900;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    margin: 0;
 }
 
 .pagination button {
@@ -392,23 +409,58 @@ h3 {
 
 /* Admin Toolbar */
 .admin-toolbar {
-    background: rgba(242, 139, 130, 0.1);
+    background: rgba(255, 255, 255, 0.03);
     padding: 1rem 1.5rem;
-    border-radius: 12px;
+    border-radius: 16px;
     margin-bottom: 2.5rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border: 1px solid rgba(242, 139, 130, 0.2);
-    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    transition: all 0.3s ease;
 }
 
-.checkbox-wrapper input {
-    width: 22px;
-    height: 22px;
+.admin-toolbar:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* Custom Checkboxes */
+.checkbox-wrapper {
+    position: relative;
+    display: inline-block;
+}
+
+.checkbox-wrapper input[type="checkbox"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 24px;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
     cursor: pointer;
-    accent-color: var(--primary);
-    border-radius: 4px;
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+.checkbox-wrapper input[type="checkbox"]:checked {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.checkbox-wrapper input[type="checkbox"]:checked::after {
+    content: '✔';
+    position: absolute;
+    color: #000;
+    font-size: 14px;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-weight: bold;
 }
 
 .select-all label {
@@ -418,6 +470,7 @@ h3 {
     cursor: pointer;
     font-weight: 600;
     color: var(--text);
+    user-select: none;
 }
 
 .selection-info a {

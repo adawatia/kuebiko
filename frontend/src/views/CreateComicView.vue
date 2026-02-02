@@ -138,103 +138,147 @@ const handleSubmit = async () => {
 </template>
 
 <style scoped>
+/* Container */
 .create-container {
     max-width: 800px;
     margin: 0 auto;
+    padding-top: 2rem;
 }
 
 h2 {
-    font-size: 2rem;
-    margin-bottom: 2rem;
+    font-size: 2.5rem;
+    font-weight: 800;
+    margin-bottom: 2.5rem;
+    background: linear-gradient(135deg, #fff 0%, #aaa 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-align: center;
 }
 
+/* Glassmorphic Form */
 .create-form {
-    background: #1e1e1e;
-    padding: 2rem;
-    border-radius: 12px;
-    border: 1px solid #333;
+    background: rgba(30, 30, 30, 0.6);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    padding: 3rem;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
 }
 
 .form-group {
-    margin-bottom: 2rem;
+    margin-bottom: 2.5rem;
 }
 
 label {
     display: block;
-    margin-bottom: 0.5rem;
-    color: var(--text-muted);
+    margin-bottom: 0.8rem;
+    color: var(--text);
+    font-weight: 600;
+    font-size: 0.95rem;
+    letter-spacing: 0.02em;
 }
 
-.hint {
-    font-size: 0.8rem;
-    color: #666;
-    margin-top: 0.25rem;
-}
-
+/* Chips for Genres */
 .genre-select {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    display: flex;
+    flex-wrap: wrap;
     gap: 1rem;
 }
 
 .checkbox-label {
-    display: flex;
-    align-items: center;
+    position: relative;
     cursor: pointer;
-    background: #2d2d2d;
-    padding: 0.5rem;
-    border-radius: 4px;
-    transition: background 0.2s;
-}
-
-.checkbox-label:hover {
-    background: #3d3d3d;
 }
 
 .checkbox-label input {
-    margin-right: 0.5rem;
-    width: auto;
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
 }
 
-.permission-denied {
-    text-align: center;
-    padding: 3rem;
-    background: #1e1e1e;
-    border-radius: 12px;
-}
-
-.permission-denied .small {
+.custom-checkbox {
+    display: inline-block;
+    padding: 0.6rem 1.2rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50px;
     font-size: 0.9rem;
-    color: #888;
-    margin-bottom: 2rem;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    color: #aaa;
+    user-select: none;
 }
 
-.loading-check {
-    text-align: center;
-    padding: 3rem;
-    color: #888;
+.checkbox-label:hover .custom-checkbox {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #fff;
 }
 
-.error-msg {
-    margin-bottom: 1.5rem;
-    border: 1px solid var(--error);
+.checkbox-label input:checked + .custom-checkbox {
+    background: var(--primary);
+    color: #121212;
+    border-color: var(--primary);
+    box-shadow: 0 4px 15px rgba(138, 180, 248, 0.4);
+    font-weight: 600;
 }
 
+/* File Input */
 .file-input {
-    background: #2d2d2d;
-    padding: 0.5rem;
-    border-radius: 4px;
+    background: rgba(255,255,255,0.03);
+    padding: 1rem;
+    border: 2px dashed rgba(255,255,255,0.1);
+    border-radius: 12px;
     width: 100%;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: #888;
+}
+
+.file-input:hover {
+    border-color: rgba(255,255,255,0.3);
+    background: rgba(255,255,255,0.05);
 }
 
 .image-preview {
-    margin-top: 1rem;
-    max-width: 200px;
+    margin-top: 1.5rem;
+    width: 200px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.1);
 }
 
 .image-preview img {
     width: 100%;
+    display: block;
+}
+
+/* Messages */
+.permission-denied, .loading-check {
+    text-align: center;
+    padding: 4rem 2rem;
+    background: rgba(30, 30, 30, 0.6);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.permission-denied .small {
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    margin-bottom: 2rem;
+}
+
+.error-msg {
+    margin-bottom: 2rem;
+    padding: 1rem;
     border-radius: 8px;
-    border: 1px solid #444;
+    background: rgba(242, 139, 130, 0.1);
+    color: #F28B82;
+    border: 1px solid rgba(242, 139, 130, 0.2);
+    text-align: center;
 }
 </style>

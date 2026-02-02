@@ -48,18 +48,30 @@ onMounted(() => {
 <style scoped>
 .app-container {
     font-family: 'Inter', sans-serif;
-    color: #e0e0e0;
-    background-color: #121212;
+    color: var(--text);
+    background-color: var(--background);
     min-height: 100vh;
 }
 
 header {
-  background-color: #1e1e1e;
-  padding: 1rem 2rem;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  background: rgba(18, 18, 18, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 0.8rem 2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.3s ease;
+}
+
+nav {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
 .logo {
@@ -79,6 +91,7 @@ header {
 .logo span {
     background: linear-gradient(45deg, #fff, #ccc);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 
@@ -102,34 +115,43 @@ header {
 .user-info {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.8rem;
     font-size: 0.9rem;
-    color: #888;
+    color: #ccc;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 0.4rem 0.8rem;
+    border-radius: 50px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .badge {
-    background: #ff6b6b;
+    background: linear-gradient(135deg, #ff6b6b, #ff8e53);
     color: white;
-    font-size: 0.7rem;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-weight: bold;
+    font-size: 0.65rem;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
 }
 
 .logout-btn {
     background: transparent;
-    border: 1px solid #444;
-    color: #aaa;
-    padding: 0.4rem 0.8rem;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #ccc;
+    padding: 0.5rem 1rem;
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 50px;
     transition: all 0.3s;
     font-size: 0.85rem;
+    font-weight: 500;
 }
 
 .logout-btn:hover {
     border-color: #ff6b6b;
     color: #ff6b6b;
+    background: rgba(255, 107, 107, 0.1);
 }
 
 main {

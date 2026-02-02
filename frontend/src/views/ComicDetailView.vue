@@ -653,6 +653,7 @@ const handleUploadCover = async (event: Event) => {
 }
 
 /* Reader Styles (Reused & Tweaked) */
+/* Reader Styles (Premium) */
 .reading-overlay {
     position: fixed;
     top: 0;
@@ -666,14 +667,37 @@ const handleUploadCover = async (event: Event) => {
 }
 
 .reader-header {
-    height: 60px;
-    background: rgba(10,10,10,0.9);
-    backdrop-filter: blur(10px);
     display: flex;
-    align-items: center;
-    padding: 0 2rem;
     justify-content: space-between;
-    border-bottom: 1px solid #333;
+    align-items: center;
+    padding: 0.8rem 1.5rem;
+    background: rgba(20, 20, 20, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    position: fixed;
+    top: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: auto;
+    min-width: 320px;
+    max-width: 90vw;
+    z-index: 10;
+    height: auto;
+    border-radius: 50px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    box-sizing: border-box;
+}
+
+.reader-title {
+    margin: 0;
+    color: #e0e0e0;
+    font-size: 1rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
 }
 
 .reader-content {
@@ -682,17 +706,29 @@ const handleUploadCover = async (event: Event) => {
     background: #050505;
     display: flex;
     justify-content: center;
-    padding: 2rem 0;
+    padding-top: 100px;
+    padding-bottom: 120px;
 }
 
 .reader-footer {
-    height: 70px;
-    background: rgba(10,10,10,0.9);
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(20, 20, 20, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 0.8rem 2rem;
+    border-radius: 50px;
     display: flex;
-    align-items: center;
     justify-content: center;
-    border-top: 1px solid #333;
+    align-items: center;
     gap: 2rem;
+    z-index: 10;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    height: auto;
+    width: auto;
 }
 
 .pdf-wrapper {
