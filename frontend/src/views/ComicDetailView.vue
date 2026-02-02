@@ -439,6 +439,13 @@ const handleUploadCover = async (event: Event) => {
     transform: translateY(-5px);
 }
 
+.cover-image-wrapper {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
 .cover-image {
     width: 100%;
     height: 100%;
@@ -517,6 +524,7 @@ const handleUploadCover = async (event: Event) => {
     line-height: 1.1;
     margin: 0 0 1rem 0;
     background: linear-gradient(90deg, #fff 0%, #bbb 100%);
+    background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     text-shadow: 0 10px 30px rgba(0,0,0,0.5);
