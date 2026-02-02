@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, onUnmounted } from 'vue';
-import { BookOpen, Image as ImageIcon, FileText, Trash2, X, AlertCircle, Book, Loader2 } from 'lucide-vue-next';
+import { ref, onMounted, computed, onUnmounted, watch, nextTick, shallowRef } from 'vue';
+import { BookOpen, Image as ImageIcon, FileText, Trash2, X, AlertCircle, Book, Loader2, ArrowUpDown, ChevronLeft, ChevronRight, Plus, Minus, Minimize, Maximize } from 'lucide-vue-next';
 import { useRoute, useRouter } from 'vue-router';
 import { getComic, deleteComic, uploadComicPdf, updateComic, type Comic } from '../api/comics';
 import apiClient, { API_URL } from '../api/client';
 import VuePdfEmbed from 'vue-pdf-embed';
 import { useAuth } from '../store';
+import InfiniteLoading from "v3-infinite-loading";
+import "v3-infinite-loading/lib/style.css";
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Configure Worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 const route = useRoute();
 const router = useRouter();
@@ -14,25 +20,184 @@ const comic = ref<Comic | null>(null);
 const loading = ref(true);
 const uploading = ref(false);
 const readingMode = ref(false);
-const pdfUrl = ref<string | null>(null);
+
+const pdfSource = ref<string | object | null>(null);
+const pdfDocument = shallowRef<any>(null); // Optimization: Cache loaded PDF document
 
 // Reader state
 const pageNum = ref(1);
 const pageCount = ref(0);
-const zoomLevel = ref(0.8); // 80% screen width by default
-const windowWidth = ref(window.innerWidth);
+const zoomLevel = ref(0.8);
+const windowWidth = ref(document.documentElement.clientWidth || window.innerWidth);
 const readerScroll = ref<HTMLElement | null>(null);
+const pageRefs = ref<HTMLElement[]>([]);
+const pageLoading = ref<boolean>(true); // Track if current page is loading
+const loadedPages = ref<Set<number>>(new Set()); // Track which pages have been loaded
+
+// Scroll Mode
+const scrollMode = ref<'horizontal' | 'vertical'>('horizontal');
+const verticalPages = ref<number[]>([]);
+const hasMorePages = computed(() => verticalPages.value.length < pageCount.value);
+
+let observer: IntersectionObserver | null = null;
+
+// Returns either the document proxy (if loaded) or the source URL
+// This ensures subsequent pages in vertical mode load instantly from memory
+const actualSource = computed(() => pdfDocument.value || pdfSource.value);
 
 const pdfWidth = computed(() => {
     return Math.floor(windowWidth.value * zoomLevel.value);
 });
 
 const updateWindowWidth = () => {
-    windowWidth.value = window.innerWidth;
+    windowWidth.value = document.documentElement.clientWidth || window.innerWidth;
+};
+
+// Intersection Observer for Vertical Page Tracking
+watch(verticalPages, async (newPages, oldPages) => {
+    // Only update observer if pages were added, not reset
+    if (newPages.length === 0) {
+        if (observer) {
+            observer.disconnect();
+        }
+        return;
+    }
+    
+    await nextTick();
+    
+    // Create observer once if it doesn't exist
+    if (!observer) {
+        observer = new IntersectionObserver((entries) => {
+            // Find the most visible page (highest intersection ratio)
+            let mostVisible = entries[0];
+            for (const entry of entries) {
+                if (entry.isIntersecting && entry.intersectionRatio > (mostVisible?.intersectionRatio || 0)) {
+                    mostVisible = entry;
+                }
+            }
+            
+            if (mostVisible && mostVisible.isIntersecting && mostVisible.intersectionRatio > 0.3) {
+                const p = Number(mostVisible.target.getAttribute('data-page'));
+                if (p && p !== pageNum.value) {
+                    pageNum.value = p;
+                }
+            }
+        }, { threshold: [0, 0.3, 0.5, 0.7, 1.0] });
+    }
+    
+    // Observe only newly added pages
+    const startIndex = oldPages?.length || 0;
+    for (let i = startIndex; i < newPages.length; i++) {
+        await nextTick();
+        const el = pageRefs.value[i];
+        if (el && !el.hasAttribute('data-observed')) {
+            observer.observe(el);
+            el.setAttribute('data-observed', 'true');
+        }
+    }
+});
+
+// Watch for route changes to close reader if navigating to another comic
+watch(() => route.params.id, (newId, oldId) => {
+    if (newId !== oldId && readingMode.value) {
+        closeReader();
+    }
+});
+
+const onPdfLoaded = (pdfDoc: any) => {
+    // Set page count only once from the first loaded instance
+    if (pageCount.value === 0 && pdfDoc?.numPages) {
+        pageCount.value = pdfDoc.numPages;
+    }
+    // Optimization: Store the loaded document proxy (only once)
+    if (!pdfDocument.value && pdfDoc) {
+        pdfDocument.value = pdfDoc;
+    }
+    // Mark page as loaded
+    pageLoading.value = false;
+};
+
+// Watch pageNum to trigger preloading and reset loading state
+watch(pageNum, (newPage) => {
+    pageLoading.value = true;
+    loadedPages.value.add(newPage);
+    
+    // Preload next and previous pages in horizontal mode
+    if (scrollMode.value === 'horizontal' && pageCount.value > 0) {
+        // Preload next page
+        if (newPage < pageCount.value) {
+            loadedPages.value.add(newPage + 1);
+        }
+        // Preload previous page
+        if (newPage > 1) {
+            loadedPages.value.add(newPage - 1);
+        }
+    }
+});
+
+const toggleScrollMode = async () => {
+    const prevMode = scrollMode.value;
+    scrollMode.value = scrollMode.value === 'horizontal' ? 'vertical' : 'horizontal';
+    
+    // Clean up observer when switching modes
+    if (observer) {
+        observer.disconnect();
+        observer = null;
+    }
+    
+    await nextTick();
+
+    if (scrollMode.value === 'vertical') {
+        // Initialize vertical mode with pages up to current page
+        verticalPages.value = [];
+        const pagesToLoad = Math.min(pageNum.value || 1, pageCount.value || 1);
+        for(let i = 1; i <= pagesToLoad; i++) {
+            verticalPages.value.push(i);
+        }
+        // Scroll to top of vertical reader
+        await nextTick();
+        scrollToTop();
+    } else {
+        // Switching to horizontal mode - maintain current page
+        verticalPages.value = [];
+        pageRefs.value = [];
+        // Ensure pageNum is valid
+        if (pageNum.value < 1) pageNum.value = 1;
+        if (pageCount.value > 0 && pageNum.value > pageCount.value) {
+            pageNum.value = pageCount.value;
+        }
+        await nextTick();
+        scrollToTop();
+    }
+};
+
+const handleLoadMore = ($state: any) => {
+    // Guard against loading before pageCount is known
+    if (pageCount.value === 0) {
+        // Defer until pageCount is set
+        setTimeout(() => handleLoadMore($state), 100);
+        return;
+    }
+    
+    const nextPage = verticalPages.value.length + 1;
+    
+    if (nextPage <= pageCount.value) {
+        // Check if page isn't already in the array (prevent duplicates)
+        if (!verticalPages.value.includes(nextPage)) {
+            verticalPages.value.push(nextPage);
+        }
+        $state.loaded();
+    } else {
+        $state.complete();
+    }
 };
 
 const fitToWidth = () => {
-    zoomLevel.value = 0.95; 
+    if (Math.abs(zoomLevel.value - 1.0) < 0.01) {
+        zoomLevel.value = 0.8;
+    } else {
+        zoomLevel.value = 1.0;
+    }
 };
 
 const zoomIn = () => {
@@ -41,10 +206,6 @@ const zoomIn = () => {
 
 const zoomOut = () => {
     zoomLevel.value = Math.max(zoomLevel.value - 0.1, 0.3);
-};
-
-const onPdfLoaded = (pdfDoc: any) => {
-    pageCount.value = pdfDoc.numPages;
 };
 
 const scrollToTop = () => {
@@ -69,76 +230,126 @@ const nextPage = () => {
 
 const closeReader = () => {
     readingMode.value = false;
-    // Cleanup blob url to free memory
-    if (pdfUrl.value) {
-        URL.revokeObjectURL(pdfUrl.value);
-        pdfUrl.value = null; // Will trigger re-fetch if opened again, ensuring fresh data
+    pdfSource.value = null; 
+    pdfDocument.value = null; // Clear cached doc
+    verticalPages.value = [];
+    pageNum.value = 1;
+    pageCount.value = 0;
+    pageRefs.value = [];
+    pageLoading.value = true;
+    loadedPages.value.clear();
+    if (observer) {
+        observer.disconnect();
+        observer = null;
     }
 };
 
-const handleReadOnline = async () => {
-    if (pdfUrl.value) {
+const handleReadOnline = () => {
+    try {
+        if (!comic.value?.pdf_path) {
+            alert('No PDF available for this comic.');
+            return;
+        }
+        
+        const token = localStorage.getItem('token');
+        if (!token) {
+            alert('Please log in to read comics.');
+            router.push('/login');
+            return;
+        }
+        
+        pdfSource.value = {
+            url: `${API_URL}/comics/${comicId}/pdf`,
+            httpHeaders: { Authorization: `Bearer ${token}` },
+            withCredentials: false
+        };
+
+        // Initialize based on current scroll mode
+        if (scrollMode.value === 'vertical') {
+            verticalPages.value = [1];
+        } else {
+            verticalPages.value = [];
+        }
+        
+        pageNum.value = 1; // Reset to page 1 for reader open
+        pageLoading.value = true; // Set loading state
+        loadedPages.value.clear(); // Clear loaded pages
         readingMode.value = true;
-        return;
+    } catch (e) {
+        console.error('Error opening PDF reader:', e);
+        alert('Failed to open PDF reader.');
     }
-    
-    loading.value = true; 
-    const url = await getPdfBlob();
-    if (url) {
-        pdfUrl.value = url;
-        readingMode.value = true;
-    }
-    loading.value = false;
 };
 
 const handleKeydown = (e: KeyboardEvent) => {
     if (!readingMode.value) return;
     
+    // Disable arrow paging in vertical mode to allow natural scrolling
+    if (scrollMode.value === 'vertical') {
+       if (e.key === 'Escape') {
+           e.preventDefault();
+           closeReader();
+       }
+       if (e.key === '+' || e.key === '=') {
+           e.preventDefault();
+           zoomIn();
+       }
+       if (e.key === '-' || e.key === '_') {
+           e.preventDefault();
+           zoomOut();
+       }
+       return; 
+    }
+
+    // Horizontal mode with keyboard navigation
     if (e.key === 'ArrowRight' || e.key === ' ') {
+        e.preventDefault();
         nextPage();
     } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
         prevPage();
     } else if (e.key === 'Escape') {
+        e.preventDefault();
         closeReader();
-    } else if (e.key === '+') {
+    } else if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
         zoomIn();
-    } else if (e.key === '-') {
+    } else if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
         zoomOut();
     }
 };
 
-onMounted(() => {
-    fetchComic();
+const comicId = parseInt(route.params.id as string);
+
+const fetchComic = async () => {
+    try {
+        comic.value = await getComic(comicId);
+    } catch (e) {
+        console.error('Error fetching comic:', e);
+    } finally {
+        loading.value = false;
+    }
+};
+
+onMounted(async () => {
     window.addEventListener('resize', updateWindowWidth);
     window.addEventListener('keydown', handleKeydown);
+    
+    const shouldRead = route.query.read === 'true';
+    await fetchComic();
+    
+    if (shouldRead && comic.value?.pdf_path) {
+        handleReadOnline();
+    }
 });
 
 onUnmounted(() => {
     window.removeEventListener('resize', updateWindowWidth);
     window.removeEventListener('keydown', handleKeydown);
-});
-
-const comicId = parseInt(route.params.id as string);
-
-const fetchComic = async (finalizeLoading = true) => {
-    try {
-        comic.value = await getComic(comicId);
-    } catch (e) {
-        console.error(e);
-    } finally {
-        if (finalizeLoading) {
-            loading.value = false;
-        }
-    }
-};
-
-onMounted(async () => {
-    const shouldRead = route.query.read === 'true';
-    // If we are going to read immediately, keep loading state active
-    await fetchComic(!shouldRead);
-    
-    if (shouldRead) {
-        await handleReadOnline();
+    if (observer) {
+        observer.disconnect();
+        observer = null;
     }
 });
 
@@ -184,7 +395,8 @@ const handleUploadPdf = async (event: Event) => {
         try {
             await uploadComicPdf(comicId, file);
             await fetchComic(); // Refresh to see updated status
-            pdfUrl.value = null; // Reset cached URL
+            pdfSource.value = null; // Reset cached source
+            pdfDocument.value = null; // Clear cached document
             alert('PDF uploaded successfully!');
         } catch (e) {
             alert('Failed to upload PDF');
@@ -241,6 +453,14 @@ const handleUploadCover = async (event: Event) => {
     <div v-if="readingMode" class="reading-overlay">
         <div class="reader-header">
             <h3 class="reader-title">{{ comic.title }}</h3>
+            
+            <div class="reader-controls-center">
+                 <button @click="toggleScrollMode" class="btn-icon" :title="scrollMode === 'horizontal' ? 'Switch to Vertical Scroll' : 'Switch to Horizontal Standard'">
+                    <ArrowUpDown v-if="scrollMode === 'horizontal'" />
+                    <BookOpen v-else />
+                </button>
+            </div>
+
             <button @click="closeReader" class="btn-icon close-btn" title="Close Reader">
                 <X />
             </button>
@@ -248,17 +468,64 @@ const handleUploadCover = async (event: Event) => {
 
         <div class="reader-content scroll-container" ref="readerScroll">
             <div class="pdf-wrapper" :style="{ width: pdfWidth + 'px' }">
-                <VuePdfEmbed 
-                    :source="pdfUrl" 
-                    :page="pageNum"
-                    @loaded="onPdfLoaded"
-                    class="pdf-viewer"
-                    :width="pdfWidth"
-                />
+                
+                <!-- Horizontal Mode -->
+                <div v-if="scrollMode === 'horizontal'" class="horizontal-reader">
+                    <div class="page-container">
+                        <VuePdfEmbed 
+                            v-if="pdfSource"
+                            :source="pdfSource" 
+                            :page="pageNum"
+                            @loaded="onPdfLoaded"
+                            @rendering-failed="pageLoading = false"
+                            class="pdf-viewer"
+                            :class="{ 'pdf-loading-blur': pageLoading }"
+                            :width="pdfWidth"
+                        />
+                        <div v-if="pageLoading && pdfSource" class="page-loading-overlay">
+                            <Loader2 class="spinner-icon" />
+                            <p>Loading page {{ pageNum }}...</p>
+                        </div>
+                    </div>
+                    <div v-if="!pdfSource" class="pdf-loading">
+                        <Loader2 class="spinner-icon" />
+                        <p>Loading PDF...</p>
+                    </div>
+                    
+                    <!-- Hidden preload containers for next/prev pages -->
+                    <div v-if="pageNum < pageCount" style="position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden;">
+                        <VuePdfEmbed :source="pdfSource" :page="pageNum + 1" :width="100" />
+                    </div>
+                    <div v-if="pageNum > 1" style="position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden;">
+                        <VuePdfEmbed :source="pdfSource" :page="pageNum - 1" :width="100" />
+                    </div>
+                </div>
+
+                <!-- Vertical Mode -->
+                <div v-else class="vertical-reader">
+                    <div v-for="page in verticalPages" :key="page" class="page-wrapper" :data-page="page" ref="pageRefs">
+                        <VuePdfEmbed 
+                            :source="pdfSource" 
+                            :page="page"
+                            @loaded="onPdfLoaded"
+                            class="pdf-page"
+                            :width="pdfWidth"
+                        />
+                    </div>
+                    <InfiniteLoading @infinite="handleLoadMore" v-if="pageCount > 0">
+                        <template #complete>
+                            <span class="end-message">End of Comic</span>
+                        </template>
+                        <template #error>
+                             <span class="error-message">Error loading pages</span>
+                        </template>
+                    </InfiniteLoading>
+                </div>
+
             </div>
         </div>
 
-        <div class="reader-footer">
+        <div class="reader-footer" v-if="scrollMode === 'horizontal'">
             <div class="zoom-controls">
                 <button @click="zoomOut" class="btn-icon">－</button>
                 <span class="zoom-label">{{ Math.round(zoomLevel * 100) }}%</span>
@@ -270,6 +537,19 @@ const handleUploadCover = async (event: Event) => {
                 <button @click="prevPage" :disabled="pageNum <= 1" class="btn-icon">←</button>
                 <span class="page-counter">{{ pageNum }} / {{ pageCount }}</span>
                 <button @click="nextPage" :disabled="pageNum >= pageCount" class="btn-icon">→</button>
+            </div>
+        </div>
+        
+        <!-- Vertical Footer (Simplified) -->
+        <div class="reader-footer" v-else>
+             <div class="zoom-controls">
+                <button @click="zoomOut" class="btn-icon">－</button>
+                <span class="zoom-label">{{ Math.round(zoomLevel * 100) }}%</span>
+                <button @click="zoomIn" class="btn-icon">＋</button>
+                <button @click="fitToWidth" class="btn-text">Fit Width</button>
+            </div>
+             <div class="pagination-controls">
+                <span class="page-counter">{{ pageNum }} / {{ pageCount }}</span>
             </div>
         </div>
     </div>
@@ -811,5 +1091,122 @@ const handleUploadCover = async (event: Event) => {
 .pdf-wrapper {
     box-shadow: 0 0 50px rgba(0,0,0,0.8);
     transition: width 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* Vertical Reader */
+.vertical-reader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0; 
+    width: 100%;
+}
+
+/* Horizontal Reader */
+.horizontal-reader {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    width: 100%;
+    min-height: 70vh;
+    position: relative;
+}
+
+.page-container {
+    position: relative;
+    display: inline-block;
+}
+
+.page-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(18, 18, 18, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-muted);
+    z-index: 10;
+    border-radius: 4px;
+}
+
+.page-loading-overlay .spinner-icon {
+    width: 48px;
+    height: 48px;
+    color: var(--primary);
+    animation: spin 1s linear infinite;
+}
+
+.page-loading-overlay p {
+    margin-top: 1.25rem;
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    font-weight: 500;
+    letter-spacing: 0.01em;
+}
+
+.pdf-loading-blur {
+    opacity: 0.4;
+    filter: blur(2px);
+    transition: opacity 0.3s ease, filter 0.3s ease;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.pdf-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 50vh;
+    color: #888;
+}
+
+.pdf-page {
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    background: white; 
+    margin-bottom: 0;
+    display: block;
+}
+
+.end-message {
+    color: #fff;
+    padding: 2rem;
+    font-size: 1.1rem;
+    opacity: 0.7;
+}
+
+.error-message {
+    color: #cf6679;
+    margin: 2rem 0;
+}
+
+.reader-controls-center {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+}
+
+.page-wrapper {
+    min-height: 50vh; /* Prevent collapse before load */
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+
+.pdf-viewer {
+    box-shadow: 0 0 30px rgba(0,0,0,0.5);
+    background: white;
+    min-height: 50vh;
+    display: block;
 }
 </style>
