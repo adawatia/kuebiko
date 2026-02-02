@@ -136,6 +136,13 @@ const getGenreBadgeColor = (genre: string) => {
                 :class="{ 'selected': selectedComics.has(comic.id) }"
                 @click="toggleSelection(comic.id)"
             >
+                <div class="card-image" v-if="comic.cover_image_path">
+                    <img :src="`http://localhost:8000/comics/${comic.id}/cover`" :alt="comic.title" loading="lazy" />
+                </div>
+                <div class="card-image placeholder" v-else>
+                    <span>{{ comic.title.charAt(0) }}</span>
+                </div>
+
                 <div class="card-content">
                     <div class="card-header">
                         <h3>{{ comic.title }}</h3>
@@ -154,8 +161,9 @@ const getGenreBadgeColor = (genre: string) => {
                         </span>
                     </div>
                     <p class="description">{{ comic.description }}</p>
-                    <div class="actions">
-                        <RouterLink :to="`/comic/${comic.id}`" class="btn btn-primary" @click.stop>Read Now</RouterLink>
+                    <div class="actions btn-group">
+                        <RouterLink :to="`/comic/${comic.id}?read=true`" class="btn btn-primary" @click.stop>Read</RouterLink>
+                        <RouterLink :to="`/comic/${comic.id}`" class="btn btn-secondary" @click.stop>View Details</RouterLink>
                     </div>
                 </div>
             </div>
@@ -171,88 +179,166 @@ const getGenreBadgeColor = (genre: string) => {
 </template>
 
 <style scoped>
+/* Home Container */
 .home-container {
     padding-top: 1rem;
+    max-width: 1400px;
+    margin: 0 auto;
 }
 
+/* Header Section */
 .header-section {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 2rem;
+    margin-bottom: 2.5rem;
     flex-wrap: wrap;
-    gap: 1rem;
+    gap: 1.5rem;
+    background: linear-gradient(to right, rgba(20, 20, 20, 0), rgba(20, 20, 20, 0.5));
+    border-radius: var(--border-radius);
+    padding: 1rem 0;
 }
 
 h1 {
-    font-size: 2.5rem;
+    font-size: 3rem;
     font-weight: 800;
+    background: linear-gradient(135deg, #fff 0%, #aaa 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.03em;
 }
 
+/* Search Bar */
 .search-bar input {
-    width: 300px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    width: 320px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(var(--glass-blur));
     color: white;
-    border-radius: 25px;
-    padding: 0.8rem 1.5rem;
+    border-radius: 50px;
+    padding: 0.85rem 1.8rem;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
 }
 
+.search-bar input:focus {
+    width: 350px;
+    border-color: var(--primary);
+    box-shadow: 0 4px 25px rgba(138, 180, 248, 0.2);
+}
+
+/* Grid Layout */
 .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     gap: 2rem;
 }
 
+/* Comic Card */
 .comic-card {
-    background: #1e1e1e;
-    border-radius: 12px;
+    background: var(--surface-highlight);
+    border-radius: 16px;
     overflow: hidden;
-    transition: transform 0.3s, box-shadow 0.3s;
-    border: 1px solid #333;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    border: 1px solid rgba(255, 255, 255, 0.05);
     display: flex;
     flex-direction: column;
+    position: relative;
 }
 
 .comic-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 20px rgba(0,0,0,0.4);
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+    border-color: rgba(255, 255, 255, 0.15);
+    z-index: 5;
+}
+
+.comic-card.selected {
     border-color: var(--primary);
+    background: rgba(138, 180, 248, 0.1);
+    box-shadow: 0 0 0 2px var(--primary);
 }
 
 .card-content {
-    padding: 1.5rem;
+    padding: 1.8rem;
     flex: 1;
     display: flex;
     flex-direction: column;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(180deg, rgba(30,30,30,1) 0%, rgba(20,20,20,1) 100%);
+}
+
+.card-image {
+    height: 200px;
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+    background: #000;
+}
+
+.card-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.5s ease;
+}
+
+.card-image.placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(45deg, #2d3436, #636e72);
+    font-size: 4rem;
+    font-weight: 800;
+    color: rgba(255,255,255,0.1);
+}
+
+.comic-card:hover .card-image img {
+    transform: scale(1.1);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.5rem;
 }
 
 h3 {
-    margin-bottom: 0.5rem;
-    font-size: 1.25rem;
+    margin: 0;
+    font-size: 1.4rem;
+    font-weight: 700;
+    line-height: 1.3;
 }
 
+/* Genres */
 .genres {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
+    gap: 0.6rem;
+    margin-bottom: 1.2rem;
+    margin-top: 0.5rem;
 }
 
 .genre-tag {
-    font-size: 0.75rem;
-    padding: 0.25rem 0.75rem;
-    border-radius: 12px;
+    font-size: 0.7rem;
+    padding: 0.3rem 0.8rem;
+    border-radius: 20px;
     color: #fff;
     font-weight: 600;
     text-transform: uppercase;
+    letter-spacing: 0.05em;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
 }
 
+/* Description */
 .description {
     color: var(--text-muted);
-    font-size: 0.9rem;
-    line-height: 1.5;
-    margin-bottom: 1.5rem;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    margin-bottom: 1.8rem;
     display: -webkit-box;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
@@ -264,87 +350,83 @@ h3 {
     margin-top: auto;
 }
 
+.btn-group {
+    display: flex;
+    gap: 0.8rem;
+}
+
+.btn-group .btn {
+    flex: 1;
+}
+
+/* Pagination */
 .pagination {
-    margin-top: 3rem;
+    margin-top: 4rem;
+    margin-bottom: 2rem;
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: 1rem;
+    gap: 1.5rem;
 }
 
 .pagination button {
-    padding: 0.5rem 1rem;
-    background: #333;
-    border: none;
+    padding: 0.8rem 1.5rem;
+    background: var(--surface-highlight);
+    border: 1px solid var(--glass-border);
     color: white;
-    border-radius: 4px;
+    border-radius: 50px;
     cursor: pointer;
+    transition: all 0.2s;
+}
+
+.pagination button:hover:not(:disabled) {
+    background: rgba(255,255,255,0.1);
+    transform: translateY(-2px);
 }
 
 .pagination button:disabled {
-    opacity: 0.5;
+    opacity: 0.3;
     cursor: not-allowed;
 }
 
-/* Admin Features */
+/* Admin Toolbar */
 .admin-toolbar {
-    background: #2d2d2d;
-    padding: 1rem;
-    border-radius: 8px;
-    margin-bottom: 2rem;
+    background: rgba(242, 139, 130, 0.1);
+    padding: 1rem 1.5rem;
+    border-radius: 12px;
+    margin-bottom: 2.5rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border: 1px solid #444;
-}
-
-.selection-info a {
-    color: #aaa;
-    text-decoration: none;
-    font-size: 0.9rem;
-}
-
-.selection-info a:hover {
-    color: white;
-}
-
-.comic-card.selected {
-    border-color: var(--primary);
-    background: #252525;
-    box-shadow: 0 0 0 2px var(--primary);
-}
-
-.card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-}
-
-.checkbox-wrapper {
-    padding-left: 0.5rem;
+    border: 1px solid rgba(242, 139, 130, 0.2);
+    backdrop-filter: blur(10px);
 }
 
 .checkbox-wrapper input {
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
     cursor: pointer;
     accent-color: var(--primary);
+    border-radius: 4px;
 }
 
 .select-all label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.8rem;
     cursor: pointer;
-    font-weight: 500;
+    font-weight: 600;
+    color: var(--text);
 }
 
-.btn-danger {
-    background: #cf6679; /* Red-ish */
-    color: white;
+.selection-info a {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    border-bottom: 1px dashed var(--text-muted);
 }
 
-.btn-danger:hover {
-    background: #b00020;
+.selection-info a:hover {
+    color: var(--text);
+    border-color: var(--text);
 }
 </style>

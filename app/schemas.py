@@ -17,15 +17,19 @@ class ComicCreate(ComicBase):
     {
         "title": "My Amazing Comic",
         "description": "A thrilling adventure story",
-        "genres": ["Action", "Fantasy"]
+        "genres": ["Action", "Fantasy"],
+        "cover_image": "base64_encoded_string_here"
     }
     """
+    cover_image: Optional[str] = Field(None, description="Base64 encoded cover image")
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "title": "My Amazing Comic",
                 "description": "A thrilling adventure story",
-                "genres": ["Action", "Fantasy"]
+                "genres": ["Action", "Fantasy"],
+                "cover_image": "data:image/png;base64,..."
             }
         }
     )
@@ -35,11 +39,13 @@ class ComicUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=200, description="Comic title")
     description: Optional[str] = Field(None, min_length=1, description="Comic description")
     genres: Optional[List[ComicGenre]] = Field(None, min_length=1, description="List of genres")
+    cover_image: Optional[str] = Field(None, description="Base64 encoded cover image")
 
 class ComicOut(ComicBase):
     """Schema for comic output"""
     id: int = Field(..., description="Comic ID")
     pdf_path: Optional[str] = Field(None, description="Path to PDF file")
+    cover_image_path: Optional[str] = Field(None, description="Path to cover image")
     
     model_config = ConfigDict(from_attributes=True)
 

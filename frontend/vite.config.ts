@@ -15,4 +15,15 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-vue': ['vue', 'vue-router'],
+          'pdf-lib': ['vue-pdf-embed'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 3000,
+  },
 })

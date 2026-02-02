@@ -119,18 +119,26 @@ onUnmounted(() => {
 
 const comicId = parseInt(route.params.id as string);
 
-const fetchComic = async () => {
+const fetchComic = async (finalizeLoading = true) => {
     try {
         comic.value = await getComic(comicId);
     } catch (e) {
         console.error(e);
     } finally {
-        loading.value = false;
+        if (finalizeLoading) {
+            loading.value = false;
+        }
     }
 };
 
-onMounted(() => {
-    fetchComic();
+onMounted(async () => {
+    const shouldRead = route.query.read === 'true';
+    // If we are going to read immediately, keep loading state active
+    await fetchComic(!shouldRead);
+    
+    if (shouldRead) {
+        await handleReadOnline();
+    }
 });
 
 const handleDelete = async () => {
@@ -170,6 +178,7 @@ const handleUploadPdf = async (event: Event) => {
     const target = event.target as HTMLInputElement;
     if (target.files && target.files.length > 0) {
         const file = target.files[0];
+        if (!file) return;
         uploading.value = true;
         try {
             await uploadComicPdf(comicId, file);
@@ -188,7 +197,8 @@ const handleUploadPdf = async (event: Event) => {
 </script>
 
 <template>
-  <div class="detail-container" v-if="comic">
+  <div v-if="loading" class="loading">Loading...</div>
+  <div v-else-if="comic" class="detail-container">
     <!-- Reading Mode Overlay -->
     <!-- Reading Mode Overlay -->
     <div v-if="readingMode" class="reading-overlay">
@@ -247,9 +257,6 @@ const handleUploadPdf = async (event: Event) => {
                     <button @click="handleReadOnline" class="btn btn-primary btn-lg">
                         Read Online
                     </button>
-                    <button @click="downloadPdf" class="btn btn-outline">
-                        Download PDF
-                    </button>
                 </div>
                 <div v-else class="no-pdf">
                     <button disabled class="btn btn-secondary">
@@ -270,12 +277,17 @@ const handleUploadPdf = async (event: Event) => {
         </div>
         
         <!-- Placeholder for cover image if we had one -->
-        <div class="cover-placeholder">
-            <div class="placeholder-text">Cover Image</div>
+        <!-- Cover Image -->
+        <div class="cover-section">
+            <div v-if="comic.cover_image_path" class="cover-image-container">
+                 <img :src="`http://localhost:8000/comics/${comic.id}/cover`" :alt="comic.title" class="cover-image" />
+            </div>
+            <div v-else class="cover-placeholder">
+                <div class="placeholder-text">Cover Image</div>
+            </div>
         </div>
     </div>
   </div>
-  <div v-else-if="loading" class="loading">Loading...</div>
   <div v-else class="not-found">Comic not found</div>
 </template>
 
@@ -341,10 +353,32 @@ h1 {
     width: 100%;
 }
 
-.cover-placeholder {
+.cover-section {
     flex: 1;
     min-width: 250px;
-    height: 400px;
+    display: flex;
+    justify-content: center;
+}
+
+.cover-image-container {
+    width: 100%;
+    max-width: 400px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.cover-image {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.cover-placeholder {
+    width: 100%;
+    max-width: 400px;
+    aspect-ratio: 2/3;
     background: #1e1e1e;
     border-radius: 12px;
     display: flex;

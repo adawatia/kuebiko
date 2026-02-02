@@ -22,7 +22,10 @@ onMounted(() => {
   <div class="app-container">
     <header v-if="state.isAuthenticated">
       <nav>
-        <div class="logo">ComicApp</div>
+        <div class="logo">
+            <img src="./assets/logo.svg" alt="Kuebiko Logo" class="logo-img" />
+            <span>Kuebiko</span>
+        </div>
         <div class="nav-links">
             <RouterLink to="/">Home</RouterLink>
             <!-- Only show Upload if superuser -->
@@ -60,9 +63,21 @@ header {
 }
 
 .logo {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
     font-size: 1.5rem;
     font-weight: 700;
-    background: linear-gradient(45deg, #ff6b6b, #feca57);
+    color: white;
+}
+
+.logo-img {
+    height: 80px;
+    width: auto;
+}
+
+.logo span {
+    background: linear-gradient(45deg, #fff, #ccc);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }

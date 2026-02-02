@@ -21,6 +21,7 @@ class Comic(Base):
     description = Column(Text)
     genres = Column(String, index=True)  # Comma-separated genres
     pdf_path = Column(String)
+    cover_image_path = Column(String, nullable=True)
 
 from fastapi_users.db import SQLAlchemyBaseUserTable
 

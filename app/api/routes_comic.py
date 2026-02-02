@@ -10,11 +10,50 @@ import math
 import uuid
 import os
 
+import base64
+import binascii
+
 router = APIRouter(prefix="/comics", tags=["comics"])
 
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
+
+def save_base64_image(base64_str: str) -> str:
+    """Decodes base64 string and saves it to a file. Returns the file path."""
+    if "," in base64_str:
+        header, encoded = base64_str.split(",", 1)
+    else:
+        encoded = base64_str
+        header = ""
+    
+    try:
+        data = base64.b64decode(encoded)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid base64 image data")
+        
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty image data")
+        
+    # Determine extension
+    extension = ".png" # Default
+    if "image/jpeg" in header or "image/jpg" in header:
+        extension = ".jpg"
+    elif "image/gif" in header:
+        extension = ".gif"
+    elif "image/webp" in header:
+        extension = ".webp"
+            
+    filename = f"{uuid.uuid4()}{extension}"
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    
+    try:
+        with open(file_path, "wb") as f:
+            f.write(data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save image: {str(e)}")
+        
+    return file_path
 
 def get_db():
     db = SessionLocal()
@@ -39,11 +78,16 @@ def create_comic(
         raise HTTPException(status_code=400, detail="A comic with this title already exists.")
 
     try:
+        cover_path = None
+        if comic.cover_image:
+            cover_path = save_base64_image(comic.cover_image)
+
         comic_db = Comic(
             title=comic.title,
             description=comic.description,
             genres=','.join([g.value for g in comic.genres]),
-            pdf_path=None
+            pdf_path=None,
+            cover_image_path=cover_path
         )
         db.add(comic_db)
         db.commit()
@@ -59,9 +103,19 @@ def create_comic(
             title=comic_db.title,
             description=comic_db.description,
             genres=genre_objs,
-            pdf_path=comic_db.pdf_path or ""
+            title=comic_db.title,
+            description=comic_db.description,
+            genres=genre_objs,
+            pdf_path=comic_db.pdf_path or "",
+            cover_image_path=comic_db.cover_image_path
         )
     except Exception as e:
+        # Cleanup image if DB fails
+        if 'cover_path' in locals() and cover_path and os.path.exists(cover_path):
+            try:
+                os.remove(cover_path)
+            except:
+                pass
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to create comic: {str(e)}")
 
@@ -109,7 +163,11 @@ def list_comics(
                 title=comic.title,
                 description=comic.description,
                 genres=genre_list,
-                pdf_path=comic.pdf_path
+                title=comic.title,
+                description=comic.description,
+                genres=genre_list,
+                pdf_path=comic.pdf_path,
+                cover_image_path=comic.cover_image_path
             ))
             
         return ComicListResponse(
@@ -138,7 +196,11 @@ def get_comic(comic_id: int, db: Session = Depends(get_db), user: User = Depends
         title=comic.title,
         description=comic.description,
         genres=genre_list,
-        pdf_path=comic.pdf_path
+        title=comic.title,
+        description=comic.description,
+        genres=genre_list,
+        pdf_path=comic.pdf_path,
+        cover_image_path=comic.cover_image_path
     )
 
 @router.get("/{comic_id}/pdf")
@@ -157,6 +219,25 @@ def download_comic_pdf(comic_id: int, db: Session = Depends(get_db), user: User 
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to download PDF: {str(e)}")
+
+@router.get("/{comic_id}/cover")
+def get_comic_cover(comic_id: int, db: Session = Depends(get_db)):
+    """Get the cover image for a comic."""
+    comic = db.query(Comic).filter(Comic.id == comic_id).first()
+    if not comic:
+        raise HTTPException(status_code=404, detail="Comic not found")
+    
+    if not comic.cover_image_path or not os.path.exists(comic.cover_image_path):
+        # Return a placeholder or 404? 404 is probably better if specifically requested.
+        raise HTTPException(status_code=404, detail="Cover image not found")
+        
+    try:
+        return FileResponse(
+            comic.cover_image_path,
+            media_type="image/jpeg" if comic.cover_image_path.endswith(".jpg") else "image/png"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get cover image: {str(e)}")
 
 @router.put("/{comic_id}", response_model=ComicOut)
 def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends(get_db), user: User = Depends(current_superuser)):
@@ -182,6 +263,35 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
                 # Here we assume it means 'no genres'.
                 comic.genres = ""
                 
+        if "cover_image" in update_data:
+            cover_image_b64 = update_data.pop("cover_image")
+            if cover_image_b64:
+                # Save new image
+                new_cover_path = save_base64_image(cover_image_b64)
+                
+                # Delete old image if exists
+                if comic.cover_image_path and os.path.exists(comic.cover_image_path):
+                    try:
+                        os.remove(comic.cover_image_path)
+                    except:
+                        pass
+                
+                comic.cover_image_path = new_cover_path
+            # If explicit None/empty sent? We might want to remove it.
+            # For now, if key exists but empty, assume no change or no cover?
+            # Following pattern: if sent as None, maybe remove?
+            # Schema says Optional[str] = None. 
+            elif cover_image_b64 is None: 
+                # Could mean "remove cover" or "no change". 
+                # Usually in PATCH/PUT separation, but here we treat missing key as no change, explicit None as...
+                # Let's assume sending None means remove cover.
+                if comic.cover_image_path and os.path.exists(comic.cover_image_path):
+                    try:
+                        os.remove(comic.cover_image_path)
+                    except:
+                        pass
+                comic.cover_image_path = None
+
         for key, value in update_data.items():
             setattr(comic, key, value)
         db.commit()
@@ -197,7 +307,11 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
             title=comic.title,
             description=comic.description,
             genres=genre_list,
-            pdf_path=comic.pdf_path or ""
+            title=comic.title,
+            description=comic.description,
+            genres=genre_list,
+            pdf_path=comic.pdf_path or "",
+            cover_image_path=comic.cover_image_path
         )
     except HTTPException:
         raise
@@ -272,6 +386,7 @@ def bulk_delete_comics(comic_ids: List[int], db: Session = Depends(get_db), user
             return
 
         pdf_paths = [c.pdf_path for c in comics if c.pdf_path]
+        cover_paths = [c.cover_image_path for c in comics if c.cover_image_path]
         
         # Delete from DB
         db.query(Comic).filter(Comic.id.in_(comic_ids)).delete(synchronize_session=False)
@@ -282,6 +397,13 @@ def bulk_delete_comics(comic_ids: List[int], db: Session = Depends(get_db), user
             if pdf_path and os.path.exists(pdf_path):
                 try:
                     os.remove(pdf_path)
+                except Exception:
+                    pass
+        
+        for cover_path in cover_paths:
+            if cover_path and os.path.exists(cover_path):
+                try:
+                    os.remove(cover_path)
                 except Exception:
                     pass
     except Exception as e:
@@ -296,6 +418,7 @@ def delete_comic(comic_id: int, db: Session = Depends(get_db), user: User = Depe
         raise HTTPException(status_code=404, detail="Comic not found")
     
     pdf_path = comic.pdf_path
+    cover_path = comic.cover_image_path
     try:
         db.delete(comic)
         db.commit()
@@ -306,6 +429,12 @@ def delete_comic(comic_id: int, db: Session = Depends(get_db), user: User = Depe
                 os.remove(pdf_path)
             except Exception:
                 pass  # Don't fail if file can't be deleted
+
+        if cover_path and os.path.exists(cover_path):
+            try:
+                os.remove(cover_path)
+            except Exception:
+                pass
         
         return
     except Exception as e:

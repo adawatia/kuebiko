@@ -12,6 +12,7 @@ const availableGenres = [
     'Action', 'Adventure', 'Fantasy', 'Horror', 'Romance', 'Sci-Fi', 'Mystery', 'Other'
 ];
 const selectedGenres = ref<string[]>([]);
+const coverImage = ref<string | null>(null);
 const loading = ref(false);
 const errorMsg = ref('');
 
@@ -22,6 +23,17 @@ onMounted(() => {
        // redirect or show message
     }
 });
+
+const handleImageUpload = (event: Event) => {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = () => {
+             coverImage.value = reader.result as string;
+        };
+        reader.readAsDataURL(file);
+    }
+};
 
 const handleSubmit = async () => {
     if (!isSuperuser.value) {
@@ -44,7 +56,8 @@ const handleSubmit = async () => {
         const comic = await createComic({
             title: title.value,
             description: description.value,
-            genres: selectedGenres.value
+            genres: selectedGenres.value,
+            cover_image: coverImage.value
         });
         
         // 2. Redirect to detail page to upload PDF
@@ -88,6 +101,14 @@ const handleSubmit = async () => {
         <div class="form-group">
             <label>Description</label>
             <textarea v-model="description" rows="5" required></textarea>
+        </div>
+
+        <div class="form-group">
+            <label>Cover Image (Optional)</label>
+            <input type="file" @change="handleImageUpload" accept="image/*" class="file-input" />
+            <div v-if="coverImage" class="image-preview">
+                <img :src="coverImage" alt="Cover Preview" />
+            </div>
         </div>
 
         <div class="form-group">
@@ -188,11 +209,25 @@ label {
 }
 
 .error-msg {
-    color: var(--error);
-    background: rgba(207, 102, 121, 0.1);
-    padding: 1rem;
-    border-radius: 4px;
     margin-bottom: 1.5rem;
     border: 1px solid var(--error);
+}
+
+.file-input {
+    background: #2d2d2d;
+    padding: 0.5rem;
+    border-radius: 4px;
+    width: 100%;
+}
+
+.image-preview {
+    margin-top: 1rem;
+    max-width: 200px;
+}
+
+.image-preview img {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid #444;
 }
 </style>

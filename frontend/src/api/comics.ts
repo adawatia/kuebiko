@@ -10,6 +10,7 @@ export interface Comic {
   description: string;
   genres: string[]; // Backend returns list of strings/enums
   pdf_path: string | null;
+  cover_image_path: string | null;
 }
 
 export interface ComicListResponse {
@@ -43,7 +44,7 @@ export const getComic = async (id: number): Promise<Comic> => {
   return response.data;
 };
 
-export const createComic = async (comicData: { title: string; description: string; genres: string[] }): Promise<Comic> => {
+export const createComic = async (comicData: { title: string; description: string; genres: string[]; cover_image?: string | null }): Promise<Comic> => {
   const response = await apiClient.post('/comics/', comicData);
   return response.data;
 };

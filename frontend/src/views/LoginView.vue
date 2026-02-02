@@ -33,6 +33,9 @@ const handleLogin = async () => {
 <template>
   <div class="auth-container">
     <div class="auth-card">
+      <div class="logo-container">
+        <img src="../assets/logo.svg" alt="Kuebiko Logo" class="auth-logo" />
+      </div>
       <h2>Welcome Back</h2>
       <p class="subtitle">Enter your credentials to access your comics</p>
       
@@ -76,6 +79,17 @@ const handleLogin = async () => {
   width: 100%;
   max-width: 400px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.logo-container {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.auth-logo {
+  height: 120px;
+  width: auto;
 }
 
 h2 {
