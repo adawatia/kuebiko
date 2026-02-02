@@ -31,8 +31,6 @@ const zoomLevel = ref(0.8);
 const windowWidth = ref(document.documentElement.clientWidth || window.innerWidth);
 const readerScroll = ref<HTMLElement | null>(null);
 const pageRefs = ref<HTMLElement[]>([]);
-const pageLoading = ref<boolean>(true); // Track if current page is loading
-const loadedPages = ref<Set<number>>(new Set()); // Track which pages have been loaded
 
 // Scroll Mode
 const scrollMode = ref<'horizontal' | 'vertical'>('horizontal');
@@ -113,27 +111,7 @@ const onPdfLoaded = (pdfDoc: any) => {
     if (!pdfDocument.value && pdfDoc) {
         pdfDocument.value = pdfDoc;
     }
-    // Mark page as loaded
-    pageLoading.value = false;
 };
-
-// Watch pageNum to trigger preloading and reset loading state
-watch(pageNum, (newPage) => {
-    pageLoading.value = true;
-    loadedPages.value.add(newPage);
-    
-    // Preload next and previous pages in horizontal mode
-    if (scrollMode.value === 'horizontal' && pageCount.value > 0) {
-        // Preload next page
-        if (newPage < pageCount.value) {
-            loadedPages.value.add(newPage + 1);
-        }
-        // Preload previous page
-        if (newPage > 1) {
-            loadedPages.value.add(newPage - 1);
-        }
-    }
-});
 
 const toggleScrollMode = async () => {
     const prevMode = scrollMode.value;
@@ -236,8 +214,6 @@ const closeReader = () => {
     pageNum.value = 1;
     pageCount.value = 0;
     pageRefs.value = [];
-    pageLoading.value = true;
-    loadedPages.value.clear();
     if (observer) {
         observer.disconnect();
         observer = null;
@@ -272,8 +248,6 @@ const handleReadOnline = () => {
         }
         
         pageNum.value = 1; // Reset to page 1 for reader open
-        pageLoading.value = true; // Set loading state
-        loadedPages.value.clear(); // Clear loaded pages
         readingMode.value = true;
     } catch (e) {
         console.error('Error opening PDF reader:', e);
@@ -471,33 +445,17 @@ const handleUploadCover = async (event: Event) => {
                 
                 <!-- Horizontal Mode -->
                 <div v-if="scrollMode === 'horizontal'" class="horizontal-reader">
-                    <div class="page-container">
-                        <VuePdfEmbed 
-                            v-if="pdfSource"
-                            :source="pdfSource" 
-                            :page="pageNum"
-                            @loaded="onPdfLoaded"
-                            @rendering-failed="pageLoading = false"
-                            class="pdf-viewer"
-                            :class="{ 'pdf-loading-blur': pageLoading }"
-                            :width="pdfWidth"
-                        />
-                        <div v-if="pageLoading && pdfSource" class="page-loading-overlay">
-                            <Loader2 class="spinner-icon" />
-                            <p>Loading page {{ pageNum }}...</p>
-                        </div>
-                    </div>
-                    <div v-if="!pdfSource" class="pdf-loading">
+                    <VuePdfEmbed 
+                        v-if="pdfSource"
+                        :source="pdfSource" 
+                        :page="pageNum"
+                        @loaded="onPdfLoaded"
+                        class="pdf-viewer"
+                        :width="pdfWidth"
+                    />
+                    <div v-else class="pdf-loading">
                         <Loader2 class="spinner-icon" />
                         <p>Loading PDF...</p>
-                    </div>
-                    
-                    <!-- Hidden preload containers for next/prev pages -->
-                    <div v-if="pageNum < pageCount" style="position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden;">
-                        <VuePdfEmbed :source="pdfSource" :page="pageNum + 1" :width="100" />
-                    </div>
-                    <div v-if="pageNum > 1" style="position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden;">
-                        <VuePdfEmbed :source="pdfSource" :page="pageNum - 1" :width="100" />
                     </div>
                 </div>
 
@@ -1109,57 +1067,6 @@ const handleUploadCover = async (event: Event) => {
     align-items: flex-start;
     width: 100%;
     min-height: 70vh;
-    position: relative;
-}
-
-.page-container {
-    position: relative;
-    display: inline-block;
-}
-
-.page-loading-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    background: rgba(18, 18, 18, 0.85);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: var(--text-muted);
-    z-index: 10;
-    border-radius: 4px;
-}
-
-.page-loading-overlay .spinner-icon {
-    width: 48px;
-    height: 48px;
-    color: var(--primary);
-    animation: spin 1s linear infinite;
-}
-
-.page-loading-overlay p {
-    margin-top: 1.25rem;
-    font-size: 0.95rem;
-    color: var(--text-muted);
-    font-weight: 500;
-    letter-spacing: 0.01em;
-}
-
-.pdf-loading-blur {
-    opacity: 0.4;
-    filter: blur(2px);
-    transition: opacity 0.3s ease, filter 0.3s ease;
-}
-
-@keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
 }
 
 .pdf-loading {
