@@ -224,9 +224,9 @@ async def upload_comic_pdf(
     if len(contents) == 0:
         raise HTTPException(status_code=400, detail="Uploaded PDF is empty.")
     
-    max_size = 10 * 1024 * 1024  # 10MB
+    max_size = 100 * 1024 * 1024  # 100MB
     if len(contents) > max_size:
-        raise HTTPException(status_code=400, detail="PDF file too large (max 10MB).")
+        raise HTTPException(status_code=400, detail="PDF file too large (max 100MB).")
     
     if not contents.lstrip().startswith(b'%PDF'):
         raise HTTPException(status_code=400, detail="File is not a valid PDF.")
@@ -262,6 +262,31 @@ async def upload_comic_pdf(
                 pass
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to upload PDF: {str(e)}")
+
+@router.post("/batch-delete", status_code=status.HTTP_204_NO_CONTENT)
+def bulk_delete_comics(comic_ids: List[int], db: Session = Depends(get_db), user: User = Depends(current_superuser)):
+    """Delete multiple comics and their associated PDF files."""
+    try:
+        comics = db.query(Comic).filter(Comic.id.in_(comic_ids)).all()
+        if not comics:
+            return
+
+        pdf_paths = [c.pdf_path for c in comics if c.pdf_path]
+        
+        # Delete from DB
+        db.query(Comic).filter(Comic.id.in_(comic_ids)).delete(synchronize_session=False)
+        db.commit()
+        
+        # Cleanup files
+        for pdf_path in pdf_paths:
+            if pdf_path and os.path.exists(pdf_path):
+                try:
+                    os.remove(pdf_path)
+                except Exception:
+                    pass
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to batch delete comics: {str(e)}")
 
 @router.delete("/{comic_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_comic(comic_id: int, db: Session = Depends(get_db), user: User = Depends(current_superuser)):

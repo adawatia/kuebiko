@@ -27,9 +27,17 @@ app.add_middleware(
 # Global error handler for validation errors
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc):
+    body = exc.body
+    try:
+        # Try to serialize if possible, otherwise convert to string
+        if not isinstance(body, (str, dict, list, int, float, bool, type(None))):
+             body = str(body)
+    except Exception:
+        body = "Could not serialize body"
+
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": exc.errors(), "body": exc.body},
+        content={"detail": exc.errors(), "body": body},
     )
 
 # Include routers
