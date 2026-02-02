@@ -49,6 +49,11 @@ export const createComic = async (comicData: { title: string; description: strin
   return response.data;
 };
 
+export const updateComic = async (id: number, comicData: { title?: string; description?: string; genres?: string[]; cover_image?: string | null }): Promise<Comic> => {
+  const response = await apiClient.put(`/comics/${id}`, comicData);
+  return response.data;
+};
+
 export const deleteComic = async (id: number): Promise<void> => {
    await apiClient.delete(`/comics/${id}`);
 };

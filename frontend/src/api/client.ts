@@ -1,8 +1,10 @@
 import axios from 'axios';
 import router from '../router';
 
+export const API_URL = 'http://localhost:8000';
+
 const apiClient = axios.create({
-  baseURL: 'http://localhost:8000',
+  baseURL: API_URL,
 });
 
 // Add a request interceptor to attach the token

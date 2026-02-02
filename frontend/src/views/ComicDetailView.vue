@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted } from 'vue';
+import { BookOpen, Image as ImageIcon, FileText, Trash2, X, AlertCircle, Book, Loader2 } from 'lucide-vue-next';
 import { useRoute, useRouter } from 'vue-router';
-import { getComic, deleteComic, uploadComicPdf, type Comic } from '../api/comics';
-import apiClient from '../api/client';
+import { getComic, deleteComic, uploadComicPdf, updateComic, type Comic } from '../api/comics';
+import apiClient, { API_URL } from '../api/client';
 import VuePdfEmbed from 'vue-pdf-embed';
 import { useAuth } from '../store';
 
@@ -194,23 +195,57 @@ const handleUploadPdf = async (event: Event) => {
         }
     }
 }
+
+
+const handleUploadCover = async (event: Event) => {
+    const target = event.target as HTMLInputElement;
+    if (target.files && target.files.length > 0) {
+        const file = target.files[0];
+        if (!file) return;
+        
+        if (file.size > 5 * 1024 * 1024) {
+            alert("Image file is too large. Maximum size is 5MB.");
+            target.value = '';
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = async () => {
+            try {
+                uploading.value = true;
+                const base64String = reader.result as string;
+                await updateComic(comicId, { cover_image: base64String });
+                await fetchComic();
+                alert('Cover image updated successfully!');
+            } catch (e: any) {
+                console.error(e);
+                alert('Failed to update cover image.');
+            } finally {
+                uploading.value = false;
+                target.value = '';
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+};
 </script>
 
 <template>
-  <div v-if="loading" class="loading">Loading...</div>
-  <div v-else-if="comic" class="detail-container">
-    <!-- Reading Mode Overlay -->
+  <div v-if="loading" class="loading">
+      <Loader2 class="spinner-icon" />
+      <p>Loading Comic...</p>
+  </div>
+  
+  <div v-else-if="comic" class="detail-wrapper">
     <!-- Reading Mode Overlay -->
     <div v-if="readingMode" class="reading-overlay">
-        <!-- Top Bar: Title & Close -->
         <div class="reader-header">
             <h3 class="reader-title">{{ comic.title }}</h3>
             <button @click="closeReader" class="btn-icon close-btn" title="Close Reader">
-                ✕
+                <X />
             </button>
         </div>
 
-        <!-- Main Content Area -->
         <div class="reader-content scroll-container" ref="readerScroll">
             <div class="pdf-wrapper" :style="{ width: pdfWidth + 'px' }">
                 <VuePdfEmbed 
@@ -223,371 +258,436 @@ const handleUploadPdf = async (event: Event) => {
             </div>
         </div>
 
-        <!-- Bottom Bar: Controls -->
         <div class="reader-footer">
             <div class="zoom-controls">
-                <button @click="zoomOut" class="btn-icon" title="Zoom Out">−</button>
+                <button @click="zoomOut" class="btn-icon">－</button>
                 <span class="zoom-label">{{ Math.round(zoomLevel * 100) }}%</span>
-                <button @click="zoomIn" class="btn-icon" title="Zoom In">+</button>
+                <button @click="zoomIn" class="btn-icon">＋</button>
                 <button @click="fitToWidth" class="btn-text">Fit Width</button>
             </div>
 
             <div class="pagination-controls" v-if="pageCount > 0">
                 <button @click="prevPage" :disabled="pageNum <= 1" class="btn-icon">←</button>
-                <span class="page-counter">Page {{ pageNum }} / {{ pageCount }}</span>
+                <span class="page-counter">{{ pageNum }} / {{ pageCount }}</span>
                 <button @click="nextPage" :disabled="pageNum >= pageCount" class="btn-icon">→</button>
             </div>
         </div>
     </div>
 
-    <div class="comic-header">
-        <h1>{{ comic.title }}</h1>
-        <div class="meta">
-            <span class="genre" v-for="g in comic.genres" :key="g">{{ g }}</span>
+    <!-- Background Hero -->
+    <div class="hero-bg">
+        <div class="hero-image" 
+             :style="comic.cover_image_path ? { backgroundImage: `url(${API_URL}/comics/${comic.id}/cover?v=${comic.cover_image_path})` } : {}">
         </div>
+        <div class="hero-overlay"></div>
     </div>
 
-    <div class="content-split">
-        <div class="info-section">
-            <h3>Description</h3>
-            <p class="description">{{ comic.description }}</p>
-
-            <div class="actions">
-                <div v-if="comic.pdf_path" class="read-actions">
-                    <button @click="handleReadOnline" class="btn btn-primary btn-lg">
-                        Read Online
-                    </button>
+    <div class="content-container">
+        <!-- Main Content -->
+        <div class="comic-layout">
+            <!-- Left Column: Cover & Actions -->
+            <div class="left-col">
+                <div class="cover-card">
+                    <div v-if="comic.cover_image_path" class="cover-image-wrapper">
+                        <img :src="`${API_URL}/comics/${comic.id}/cover?v=${comic.cover_image_path}`" :alt="comic.title" class="cover-image" />
+                    </div>
+                    <div v-else class="cover-placeholder">
+                        <Book class="placeholder-icon" :size="48" />
+                        <span class="placeholder-text">No Cover</span>
+                    </div>
                 </div>
-                <div v-else class="no-pdf">
-                    <button disabled class="btn btn-secondary">
+
+                <div class="primary-actions">
+                    <button v-if="comic.pdf_path" @click="handleReadOnline" class="btn btn-read">
+                        <BookOpen class="icon" :size="20" /> Read Now
+                    </button>
+                    <button v-else disabled class="btn btn-disabled">
                         No PDF Available
                     </button>
+                    <!-- Future: Add Favorite / Download buttons here -->
+                </div>
+            </div>
+
+            <!-- Right Column: Details -->
+            <div class="right-col">
+                <div class="header-info">
+                    <h1 class="comic-title">{{ comic.title }}</h1>
+                    <div class="genres">
+                        <span v-for="g in comic.genres" :key="g" class="genre-tag">{{ g }}</span>
+                    </div>
+                </div>
+
+                <div class="description-box">
+                    <h3>Synopsis</h3>
+                    <p>{{ comic.description }}</p>
                 </div>
                 
-                <div v-if="isSuperuser" class="admin-actions">
-                    <label class="btn btn-outline" :class="{ 'uploading': uploading }">
-                        {{ uploading ? 'Uploading...' : (comic.pdf_path ? 'Replace PDF' : 'Upload PDF') }}
-                        <input type="file" accept="application/pdf" @change="handleUploadPdf" :disabled="uploading" style="display:none;" />
-                    </label>
-                    <span class="upload-hint">Max 100MB</span>
-                    
-                    <button @click="handleDelete" class="btn btn-danger">Delete Comic</button>
+                <!-- Admin Zone -->
+                <div v-if="isSuperuser" class="admin-panel">
+                    <div class="admin-header">Admin Controls</div>
+                    <div class="admin-grid">
+                        <label class="btn btn-admin" :class="{ 'uploading': uploading }">
+                            <FileText :size="18" />
+                            {{ uploading ? 'Wait...' : (comic.pdf_path ? 'Replace PDF' : 'Upload PDF') }}
+                            <input type="file" accept="application/pdf" @change="handleUploadPdf" :disabled="uploading" style="display:none;" />
+                        </label>
+                        
+                        <label class="btn btn-admin" :class="{ 'uploading': uploading }">
+                            <ImageIcon :size="18" />
+                            {{ uploading ? 'Wait...' : (comic.cover_image_path ? 'Replace Cover' : 'Upload Cover') }}
+                            <input type="file" accept="image/*" @change="handleUploadCover" :disabled="uploading" style="display:none;" />
+                        </label>
+
+                        <button @click="handleDelete" class="btn btn-admin btn-danger">
+                            <Trash2 :size="18" /> Delete
+                        </button>
+                    </div>
+                    <p class="admin-hint">Max file sizes: PDF 100MB, Image 5MB</p>
                 </div>
-            </div>
-        </div>
-        
-        <!-- Placeholder for cover image if we had one -->
-        <!-- Cover Image -->
-        <div class="cover-section">
-            <div v-if="comic.cover_image_path" class="cover-image-container">
-                 <img :src="`http://localhost:8000/comics/${comic.id}/cover`" :alt="comic.title" class="cover-image" />
-            </div>
-            <div v-else class="cover-placeholder">
-                <div class="placeholder-text">Cover Image</div>
             </div>
         </div>
     </div>
   </div>
-  <div v-else class="not-found">Comic not found</div>
+  
+  <div v-else class="not-found">
+      <h2>404</h2>
+      <p>Comic not found</p>
+      <RouterLink to="/" class="btn btn-primary">Go Home</RouterLink>
+  </div>
 </template>
 
 <style scoped>
-.detail-container {
-    padding: 2rem 0;
+/* Layout & Container */
+.detail-wrapper {
+    position: relative;
+    min-height: 90vh;
+    color: #fff;
+    overflow-x: hidden;
 }
 
-.comic-header {
-    margin-bottom: 2rem;
-    border-bottom: 1px solid #333;
-    padding-bottom: 1rem;
+.content-container {
+    position: relative;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 3rem 2rem;
+    z-index: 2;
 }
 
-h1 {
-    font-size: 3rem;
-    margin-bottom: 1rem;
-}
-
-.meta {
-    display: flex;
-    gap: 1rem;
-}
-
-.genre {
-    background: #333;
-    padding: 0.25rem 0.75rem;
-    border-radius: 4px;
-    font-size: 0.9rem;
-}
-
-.content-split {
-    display: flex;
-    gap: 3rem;
-    flex-wrap: wrap;
-}
-
-.info-section {
-    flex: 2;
-    min-width: 300px;
-}
-
-.description {
-    font-size: 1.1rem;
-    line-height: 1.6;
-    color: #ccc;
-    margin-bottom: 2rem;
-}
-
-.actions {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    align-items: flex-start;
-}
-
-.admin-actions {
-    display: flex;
-    gap: 1rem;
-    margin-top: 1rem;
-    padding-top: 1rem;
-    border-top: 1px solid #333;
+/* Background Hero */
+.hero-bg {
+    position: fixed;
+    top: 0;
+    left: 0;
     width: 100%;
+    height: 100vh;
+    z-index: 0;
+    pointer-events: none;
 }
 
-.cover-section {
-    flex: 1;
-    min-width: 250px;
-    display: flex;
-    justify-content: center;
-}
-
-.cover-image-container {
+.hero-image {
     width: 100%;
-    max-width: 400px;
-    border-radius: 12px;
+    height: 100%;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    filter: blur(20px) brightness(0.4);
+    transform: scale(1.1); /* Prevent blur edges */
+}
+
+.hero-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(to bottom, rgba(18,18,18,0.8) 0%, rgba(18,18,18,1) 90%);
+}
+
+/* Grid Layout */
+.comic-layout {
+    display: grid;
+    grid-template-columns: 350px 1fr;
+    gap: 4rem;
+    align-items: start;
+}
+
+@media (max-width: 900px) {
+    .comic-layout {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+    }
+    
+    .left-col {
+        max-width: 400px;
+        margin: 0 auto;
+        width: 100%;
+    }
+}
+
+/* Cover Image */
+.cover-card {
+    border-radius: 16px;
     overflow: hidden;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-    border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    transition: transform 0.3s ease;
+    background: #1e1e1e;
+    aspect-ratio: 2/3;
+    position: relative;
+}
+
+.cover-card:hover {
+    transform: translateY(-5px);
 }
 
 .cover-image {
     width: 100%;
-    height: auto;
+    height: 100%;
+    object-fit: cover;
     display: block;
 }
 
 .cover-placeholder {
     width: 100%;
-    max-width: 400px;
-    aspect-ratio: 2/3;
-    background: #1e1e1e;
-    border-radius: 12px;
+    height: 100%;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
+    color: #666;
     border: 2px dashed #444;
 }
 
-.placeholder-text {
-    color: #444;
-    font-weight: 700;
-    font-size: 1.5rem;
+.placeholder-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
 }
 
-.btn-secondary {
-    background: #333;
-    color: #aaa;
-    cursor: default;
+.placeholder-text {
+    font-weight: 600;
+    font-size: 1.2rem;
+}
+
+/* Actions */
+.primary-actions {
+    margin-top: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.btn-read {
+    background: linear-gradient(135deg, var(--primary) 0%, #4a90e2 100%);
+    color: white;
+    font-size: 1.1rem;
+    font-weight: 700;
+    padding: 1rem;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.8rem;
+    box-shadow: 0 4px 20px rgba(138, 180, 248, 0.3);
+}
+
+.btn-read:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(138, 180, 248, 0.5);
+    filter: brightness(1.1);
+}
+
+.btn-disabled {
+    background: rgba(255,255,255,0.1);
+    color: #888;
+    cursor: not-allowed;
+    border: 1px solid rgba(255,255,255,0.05);
+    padding: 1rem;
+    border-radius: 12px;
+    text-align: center;
+}
+
+/* Right Column Info */
+.comic-title {
+    font-size: 3.5rem;
+    font-weight: 800;
+    line-height: 1.1;
+    margin: 0 0 1rem 0;
+    background: linear-gradient(90deg, #fff 0%, #bbb 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+.genres {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    margin-bottom: 2.5rem;
+}
+
+.genre-tag {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 0.4rem 1rem;
+    border-radius: 50px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: #ddd;
+    text-transform: uppercase;
+}
+
+.description-box {
+    margin-bottom: 3rem;
+}
+
+.description-box h3 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.description-box p {
+    font-size: 1.1rem;
+    line-height: 1.8;
+    color: #ccc;
+    white-space: pre-wrap;
+}
+
+/* Admin Panel */
+.admin-panel {
+    background: rgba(30, 30, 30, 0.6);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 1.5rem;
+}
+
+.admin-header {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #666;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    padding-bottom: 0.5rem;
+}
+
+.admin-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+}
+
+.btn-admin {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #ccc;
+    padding: 0.8rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: background 0.2s;
+}
+
+.btn-admin:hover {
+    background: rgba(255,255,255,0.1);
+    color: white;
+    border-color: rgba(255,255,255,0.2);
 }
 
 .btn-danger {
-    background: transparent;
-    border: 1px solid #cf6679;
+    background: rgba(207, 102, 121, 0.1);
+    border-color: rgba(207, 102, 121, 0.3);
     color: #cf6679;
 }
 
 .btn-danger:hover {
-    background: #cf6679;
+    background: rgba(207, 102, 121, 0.2);
     color: white;
+    border-color: #cf6679;
 }
 
-.btn-outline {
-    background: transparent;
-    border: 1px solid var(--primary);
-    color: var(--primary);
-    cursor: pointer;
-}
-
-.btn-outline:hover {
-    background: rgba(187, 134, 252, 0.1);
-}
-
-.loading {
+.admin-hint {
+    font-size: 0.8rem;
+    color: #555;
+    margin-top: 1rem;
     text-align: center;
-    padding: 2rem;
+}
+
+/* Loading & Error */
+.loading, .not-found {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 50vh;
     color: #888;
 }
 
-.not-found {
-    text-align: center;
-    padding: 2rem;
-    font-size: 1.5rem;
-    color: #aaa;
+.spinner-icon {
+    width: 40px;
+    height: 40px;
+    color: var(--primary);
+    animation: spin 1s linear infinite;
+    margin-bottom: 1rem;
 }
 
-/* Modern Reader UI */
+/* Reader Styles (Reused & Tweaked) */
 .reading-overlay {
     position: fixed;
     top: 0;
     left: 0;
     width: 100vw;
     height: 100vh;
-    background: #000; /* Deep dark background */
-    z-index: 2000;
+    background: #000;
+    z-index: 9999;
     display: flex;
     flex-direction: column;
 }
 
 .reader-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem 2rem;
-    background: rgba(20, 20, 20, 0.9);
-    backdrop-filter: blur(10px);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    position: absolute;
-    top: 0;
-    width: 100%;
-    z-index: 10;
     height: 60px;
-    box-sizing: border-box;
-}
-
-.reader-title {
-    margin: 0;
-    color: #e0e0e0;
-    font-size: 1.1rem;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    background: rgba(10,10,10,0.9);
+    backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    padding: 0 2rem;
+    justify-content: space-between;
+    border-bottom: 1px solid #333;
 }
 
 .reader-content {
     flex: 1;
     overflow-y: auto;
-    overflow-x: hidden;
+    background: #050505;
     display: flex;
     justify-content: center;
-    align-items: flex-start;
-    padding-top: 80px; /* Header space */
-    padding-bottom: 100px; /* Footer space */
-    background: #0a0a0a;
-}
-
-.pdf-wrapper {
-    transition: width 0.2s ease-out;
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
-}
-
-.pdf-viewer {
-    display: block;
-    width: 100%;
+    padding: 2rem 0;
 }
 
 .reader-footer {
-    position: absolute;
-    bottom: 2rem;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(30, 30, 30, 0.9);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    padding: 0.8rem 1.5rem;
-    border-radius: 50px;
-    display: flex;
-    gap: 2rem;
-    align-items: center;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-    z-index: 10;
-}
-
-.zoom-controls, .pagination-controls {
-    display: flex;
-    align-items: center;
-    gap: 0.8rem;
-}
-
-.btn-icon {
-    background: transparent;
-    border: none;
-    color: #fff;
-    font-size: 1.2rem;
-    width: 36px;
-    height: 36px;
+    height: 70px;
+    background: rgba(10,10,10,0.9);
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
-    cursor: pointer;
-    transition: background 0.2s;
+    border-top: 1px solid #333;
+    gap: 2rem;
 }
 
-.btn-icon:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.15);
-}
-
-.btn-icon:disabled {
-    opacity: 0.3;
-    cursor: default;
-}
-
-.zoom-label, .page-counter {
-    color: #ccc;
-    font-size: 0.9rem;
-    font-variant-numeric: tabular-nums;
-    font-weight: 500;
-    min-width: 3ch;
-    text-align: center;
-}
-
-.page-counter {
-    min-width: 80px;
-}
-
-.btn-text {
-    background: transparent;
-    border: 1px solid rgba(255,255,255,0.2);
-    color: #aaa;
-    font-size: 0.75rem;
-    padding: 0.3rem 0.6rem;
-    border-radius: 4px;
-    cursor: pointer;
-}
-
-.btn-text:hover {
-    border-color: #fff;
-    color: #fff;
-}
-
-.page-loader {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: white;
-    background: rgba(0,0,0,0.7);
-    padding: 1rem 2rem;
-    border-radius: 8px;
-    pointer-events: none;
-}
-
-.close-btn {
-    font-size: 1.2rem;
-    color: #aaa;
-}
-.close-btn:hover {
-    color: #fff;
-    background: rgba(255, 0, 0, 0.2);
+.pdf-wrapper {
+    box-shadow: 0 0 50px rgba(0,0,0,0.8);
 }
 </style>

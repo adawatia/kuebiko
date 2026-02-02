@@ -2,6 +2,7 @@
 import { ref, onMounted, watch, reactive } from 'vue';
 import { getComics, bulkDeleteComics, type Comic, type ComicListResponse } from '../api/comics';
 import { useAuth } from '../store';
+import { API_URL } from '../api/client';
 
 const { isSuperuser } = useAuth();
 const comics = ref<Comic[]>([]);
@@ -137,7 +138,7 @@ const getGenreBadgeColor = (genre: string) => {
                 @click="toggleSelection(comic.id)"
             >
                 <div class="card-image" v-if="comic.cover_image_path">
-                    <img :src="`http://localhost:8000/comics/${comic.id}/cover`" :alt="comic.title" loading="lazy" />
+                    <img :src="`${API_URL}/comics/${comic.id}/cover?v=${comic.cover_image_path}`" :alt="comic.title" loading="lazy" />
                 </div>
                 <div class="card-image placeholder" v-else>
                     <span>{{ comic.title.charAt(0) }}</span>

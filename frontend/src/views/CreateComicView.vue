@@ -25,8 +25,15 @@ onMounted(() => {
 });
 
 const handleImageUpload = (event: Event) => {
-    const file = (event.target as HTMLInputElement).files?.[0];
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
     if (file) {
+        if (file.size > 5 * 1024 * 1024) {
+            alert("Image file is too large. Maximum size is 5MB.");
+            input.value = ''; // Clear input
+            return;
+        }
+        
         const reader = new FileReader();
         reader.onload = () => {
              coverImage.value = reader.result as string;

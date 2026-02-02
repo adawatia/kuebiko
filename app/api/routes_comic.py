@@ -34,6 +34,11 @@ def save_base64_image(base64_str: str) -> str:
         
     if not data:
         raise HTTPException(status_code=400, detail="Empty image data")
+    
+    # Check size (max 5MB)
+    if len(data) > 5 * 1024 * 1024:
+         raise HTTPException(status_code=400, detail="Image too large (max 5MB)")
+
         
     # Determine extension
     extension = ".png" # Default
@@ -103,9 +108,6 @@ def create_comic(
             title=comic_db.title,
             description=comic_db.description,
             genres=genre_objs,
-            title=comic_db.title,
-            description=comic_db.description,
-            genres=genre_objs,
             pdf_path=comic_db.pdf_path or "",
             cover_image_path=comic_db.cover_image_path
         )
@@ -163,9 +165,6 @@ def list_comics(
                 title=comic.title,
                 description=comic.description,
                 genres=genre_list,
-                title=comic.title,
-                description=comic.description,
-                genres=genre_list,
                 pdf_path=comic.pdf_path,
                 cover_image_path=comic.cover_image_path
             ))
@@ -193,9 +192,6 @@ def get_comic(comic_id: int, db: Session = Depends(get_db), user: User = Depends
         genre_list = []
     return ComicOut(
         id=comic.id,
-        title=comic.title,
-        description=comic.description,
-        genres=genre_list,
         title=comic.title,
         description=comic.description,
         genres=genre_list,
@@ -231,10 +227,22 @@ def get_comic_cover(comic_id: int, db: Session = Depends(get_db)):
         # Return a placeholder or 404? 404 is probably better if specifically requested.
         raise HTTPException(status_code=404, detail="Cover image not found")
         
+    
+    # Determine media type based on extension
+    filename = comic.cover_image_path.lower()
+    if filename.endswith(".jpg") or filename.endswith(".jpeg"):
+        media_type = "image/jpeg"
+    elif filename.endswith(".gif"):
+        media_type = "image/gif"
+    elif filename.endswith(".webp"):
+        media_type = "image/webp"
+    else:
+        media_type = "image/png"
+
     try:
         return FileResponse(
             comic.cover_image_path,
-            media_type="image/jpeg" if comic.cover_image_path.endswith(".jpg") else "image/png"
+            media_type=media_type
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get cover image: {str(e)}")
@@ -263,41 +271,37 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
                 # Here we assume it means 'no genres'.
                 comic.genres = ""
                 
+        old_cover_path = None
+        new_cover_path = None
+
         if "cover_image" in update_data:
             cover_image_b64 = update_data.pop("cover_image")
             if cover_image_b64:
                 # Save new image
                 new_cover_path = save_base64_image(cover_image_b64)
                 
-                # Delete old image if exists
-                if comic.cover_image_path and os.path.exists(comic.cover_image_path):
-                    try:
-                        os.remove(comic.cover_image_path)
-                    except:
-                        pass
+                # Mark old image for deletion
+                old_cover_path = comic.cover_image_path
                 
                 comic.cover_image_path = new_cover_path
-            # If explicit None/empty sent? We might want to remove it.
-            # For now, if key exists but empty, assume no change or no cover?
-            # Following pattern: if sent as None, maybe remove?
-            # Schema says Optional[str] = None. 
             elif cover_image_b64 is None: 
-                # Could mean "remove cover" or "no change". 
-                # Usually in PATCH/PUT separation, but here we treat missing key as no change, explicit None as...
-                # Let's assume sending None means remove cover.
-                if comic.cover_image_path and os.path.exists(comic.cover_image_path):
-                    try:
-                        os.remove(comic.cover_image_path)
-                    except:
-                        pass
+                # Remove cover
+                old_cover_path = comic.cover_image_path
                 comic.cover_image_path = None
 
         for key, value in update_data.items():
             setattr(comic, key, value)
+            
         db.commit()
         db.refresh(comic)
-        db.commit()
-        db.refresh(comic)
+        
+        # Cleanup old image after successful commit
+        if old_cover_path and os.path.exists(old_cover_path):
+            try:
+                os.remove(old_cover_path)
+            except:
+                pass
+                
         try:
             genre_list = [ComicGenre(g) for g in (comic.genres or "").split(',') if g]
         except ValueError:
@@ -307,16 +311,25 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
             title=comic.title,
             description=comic.description,
             genres=genre_list,
-            title=comic.title,
-            description=comic.description,
-            genres=genre_list,
             pdf_path=comic.pdf_path or "",
             cover_image_path=comic.cover_image_path
         )
     except HTTPException:
+        # Cleanup new file if it was created but operation checked out
+        if 'new_cover_path' in locals() and new_cover_path and os.path.exists(new_cover_path):
+             try:
+                 os.remove(new_cover_path)
+             except:
+                 pass
         raise
     except Exception as e:
+        # Cleanup new file if db rollback
         db.rollback()
+        if 'new_cover_path' in locals() and new_cover_path and os.path.exists(new_cover_path):
+             try:
+                 os.remove(new_cover_path)
+             except:
+                 pass
         raise HTTPException(status_code=500, detail=f"Failed to update comic: {str(e)}")
 
 @router.post("/{comic_id}/pdf", status_code=200)
