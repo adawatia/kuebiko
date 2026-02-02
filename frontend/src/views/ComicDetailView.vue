@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getComic, deleteComic, uploadComicPdf, type Comic } from '../api/comics';
 import apiClient from '../api/client';
@@ -14,29 +14,108 @@ const loading = ref(true);
 const uploading = ref(false);
 const readingMode = ref(false);
 const pdfUrl = ref<string | null>(null);
-const scale = ref(1.0);
+
+// Reader state
 const pageNum = ref(1);
 const pageCount = ref(0);
+const zoomLevel = ref(0.8); // 80% screen width by default
+const windowWidth = ref(window.innerWidth);
+const readerScroll = ref<HTMLElement | null>(null);
+
+const pdfWidth = computed(() => {
+    return Math.floor(windowWidth.value * zoomLevel.value);
+});
+
+const updateWindowWidth = () => {
+    windowWidth.value = window.innerWidth;
+};
+
+const fitToWidth = () => {
+    zoomLevel.value = 0.95; 
+};
 
 const zoomIn = () => {
-    scale.value = Math.min(scale.value + 0.2, 3.0);
+    zoomLevel.value = Math.min(zoomLevel.value + 0.1, 2.0);
 };
 
 const zoomOut = () => {
-    scale.value = Math.max(scale.value - 0.2, 0.5);
+    zoomLevel.value = Math.max(zoomLevel.value - 0.1, 0.3);
 };
 
 const onPdfLoaded = (pdfDoc: any) => {
     pageCount.value = pdfDoc.numPages;
 };
 
+const scrollToTop = () => {
+    if (readerScroll.value) {
+        readerScroll.value.scrollTop = 0;
+    }
+};
+
 const prevPage = () => {
-    if (pageNum.value > 1) pageNum.value--;
+    if (pageNum.value > 1) {
+        pageNum.value--;
+        scrollToTop();
+    }
 };
 
 const nextPage = () => {
-    if (pageNum.value < pageCount.value) pageNum.value++;
+    if (pageNum.value < pageCount.value) {
+        pageNum.value++;
+        scrollToTop();
+    }
 };
+
+const closeReader = () => {
+    readingMode.value = false;
+    // Cleanup blob url to free memory
+    if (pdfUrl.value) {
+        URL.revokeObjectURL(pdfUrl.value);
+        pdfUrl.value = null; // Will trigger re-fetch if opened again, ensuring fresh data
+    }
+};
+
+const handleReadOnline = async () => {
+    if (pdfUrl.value) {
+        readingMode.value = true;
+        return;
+    }
+    
+    loading.value = true; 
+    const url = await getPdfBlob();
+    if (url) {
+        pdfUrl.value = url;
+        readingMode.value = true;
+    }
+    loading.value = false;
+};
+
+const handleKeydown = (e: KeyboardEvent) => {
+    if (!readingMode.value) return;
+    
+    if (e.key === 'ArrowRight' || e.key === ' ') {
+        nextPage();
+    } else if (e.key === 'ArrowLeft') {
+        prevPage();
+    } else if (e.key === 'Escape') {
+        closeReader();
+    } else if (e.key === '+') {
+        zoomIn();
+    } else if (e.key === '-') {
+        zoomOut();
+    }
+};
+
+onMounted(() => {
+    fetchComic();
+    window.addEventListener('resize', updateWindowWidth);
+    window.addEventListener('keydown', handleKeydown);
+});
+
+onUnmounted(() => {
+    window.removeEventListener('resize', updateWindowWidth);
+    window.removeEventListener('keydown', handleKeydown);
+});
 
 const comicId = parseInt(route.params.id as string);
 
@@ -87,21 +166,6 @@ const downloadPdf = async () => {
     }
 };
 
-const handleReadOnline = async () => {
-    if (pdfUrl.value) {
-        readingMode.value = true;
-        return;
-    }
-    
-    loading.value = true; // Use separate loading state if preferred, but this blocks UI
-    const url = await getPdfBlob();
-    if (url) {
-        pdfUrl.value = url;
-        readingMode.value = true;
-    }
-    loading.value = false;
-};
-
 const handleUploadPdf = async (event: Event) => {
     const target = event.target as HTMLInputElement;
     if (target.files && target.files.length > 0) {
@@ -126,31 +190,43 @@ const handleUploadPdf = async (event: Event) => {
 <template>
   <div class="detail-container" v-if="comic">
     <!-- Reading Mode Overlay -->
+    <!-- Reading Mode Overlay -->
     <div v-if="readingMode" class="reading-overlay">
+        <!-- Top Bar: Title & Close -->
         <div class="reader-header">
-            <h3>Reading: {{ comic.title }}</h3>
-            
-            <div class="reader-pagination" v-if="pageCount > 0">
-                <button @click="prevPage" :disabled="pageNum <= 1" class="btn btn-sm">Prev</button>
-                <span>{{ pageNum }} / {{ pageCount }}</span>
-                <button @click="nextPage" :disabled="pageNum >= pageCount" class="btn btn-sm">Next</button>
-            </div>
+            <h3 class="reader-title">{{ comic.title }}</h3>
+            <button @click="closeReader" class="btn-icon close-btn" title="Close Reader">
+                ✕
+            </button>
+        </div>
 
-            <div class="reader-controls">
-                <button @click="zoomOut" class="btn btn-sm">-</button>
-                <span>{{ Math.round(scale * 100) }}%</span>
-                <button @click="zoomIn" class="btn btn-sm">+</button>
-                <button @click="readingMode = false" class="btn btn-close">Close</button>
+        <!-- Main Content Area -->
+        <div class="reader-content scroll-container" ref="readerScroll">
+            <div class="pdf-wrapper" :style="{ width: pdfWidth + 'px' }">
+                <VuePdfEmbed 
+                    :source="pdfUrl" 
+                    :page="pageNum"
+                    @loaded="onPdfLoaded"
+                    class="pdf-viewer"
+                    :width="pdfWidth"
+                />
             </div>
         </div>
-        <div class="reader-content scroll-container">
-            <VuePdfEmbed 
-                :source="pdfUrl" 
-                :page="pageNum"
-                :scale="scale"
-                @loaded="onPdfLoaded"
-                class="pdf-viewer"
-            />
+
+        <!-- Bottom Bar: Controls -->
+        <div class="reader-footer">
+            <div class="zoom-controls">
+                <button @click="zoomOut" class="btn-icon" title="Zoom Out">−</button>
+                <span class="zoom-label">{{ Math.round(zoomLevel * 100) }}%</span>
+                <button @click="zoomIn" class="btn-icon" title="Zoom In">+</button>
+                <button @click="fitToWidth" class="btn-text">Fit Width</button>
+            </div>
+
+            <div class="pagination-controls" v-if="pageCount > 0">
+                <button @click="prevPage" :disabled="pageNum <= 1" class="btn-icon">←</button>
+                <span class="page-counter">Page {{ pageNum }} / {{ pageCount }}</span>
+                <button @click="nextPage" :disabled="pageNum >= pageCount" class="btn-icon">→</button>
+            </div>
         </div>
     </div>
 
@@ -324,15 +400,15 @@ h1 {
     color: #aaa;
 }
 
-/* Reader Overlay */
+/* Modern Reader UI */
 .reading-overlay {
     position: fixed;
     top: 0;
     left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.95);
-    z-index: 1000;
+    width: 100vw;
+    height: 100vh;
+    background: #000; /* Deep dark background */
+    z-index: 2000;
     display: flex;
     flex-direction: column;
 }
@@ -342,90 +418,142 @@ h1 {
     justify-content: space-between;
     align-items: center;
     padding: 1rem 2rem;
-    background: #111;
-    border-bottom: 1px solid #333;
+    background: rgba(20, 20, 20, 0.9);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    position: absolute;
+    top: 0;
+    width: 100%;
+    z-index: 10;
+    height: 60px;
+    box-sizing: border-box;
 }
 
-.reader-header h3 {
+.reader-title {
     margin: 0;
-    color: white;
+    color: #e0e0e0;
+    font-size: 1.1rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.btn-close {
-    background: transparent;
-    border: 1px solid #fff;
-    color: #fff;
-    padding: 0.5rem 1rem;
-    cursor: pointer;
-    border-radius: 4px;
-}
-
-.btn-close:hover {
-    background: white;
-    color: black;
-}
-
-.reader-controls {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    color: white;
-}
-
-.reader-pagination {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    color: white;
-    font-variant-numeric: tabular-nums;
-}
-
-.btn-sm {
-    padding: 0.2rem 0.6rem;
-    background: #333;
-    color: white;
-    border: 1px solid #555;
-    cursor: pointer;
-    border-radius: 4px;
-}
-
-.scroll-container {
+.reader-content {
+    flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     display: flex;
     justify-content: center;
-    background: #333;
-    padding: 2rem;
+    align-items: flex-start;
+    padding-top: 80px; /* Header space */
+    padding-bottom: 100px; /* Footer space */
+    background: #0a0a0a;
+}
+
+.pdf-wrapper {
+    transition: width 0.2s ease-out;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
 }
 
 .pdf-viewer {
-    box-shadow: 0 0 20px rgba(0,0,0,0.5);
-    max-width: 100%;
-}
-.reader-content {
-    flex: 1;
-    overflow: hidden;
-}
-
-.pdf-frame {
+    display: block;
     width: 100%;
-    height: 100%;
-    border: none;
 }
 
-.read-actions {
+.reader-footer {
+    position: absolute;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(30, 30, 30, 0.9);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 0.8rem 1.5rem;
+    border-radius: 50px;
     display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
+    gap: 2rem;
+    align-items: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    z-index: 10;
 }
 
-.btn-lg {
-    padding: 0.8rem 2rem;
-    font-size: 1.1rem;
+.zoom-controls, .pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
 }
 
-.upload-hint {
-    font-size: 0.8rem;
-    color: #666;
-    align-self: center;
+.btn-icon {
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 1.2rem;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-icon:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.btn-icon:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.zoom-label, .page-counter {
+    color: #ccc;
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    min-width: 3ch;
+    text-align: center;
+}
+
+.page-counter {
+    min-width: 80px;
+}
+
+.btn-text {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #aaa;
+    font-size: 0.75rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-text:hover {
+    border-color: #fff;
+    color: #fff;
+}
+
+.page-loader {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    background: rgba(0,0,0,0.7);
+    padding: 1rem 2rem;
+    border-radius: 8px;
+    pointer-events: none;
+}
+
+.close-btn {
+    font-size: 1.2rem;
+    color: #aaa;
+}
+.close-btn:hover {
+    color: #fff;
+    background: rgba(255, 0, 0, 0.2);
 }
 </style>
