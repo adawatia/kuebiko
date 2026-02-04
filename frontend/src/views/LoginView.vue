@@ -145,4 +145,32 @@ label {
 .footer-links a:hover {
   text-decoration: underline;
 }
+
+@media (max-width: 640px) {
+  .auth-container {
+    padding: 1.5rem 1rem;
+    min-height: auto;
+  }
+
+  .auth-card {
+    padding: 1.75rem;
+    border-radius: 14px;
+  }
+
+  .auth-logo {
+    height: 96px;
+  }
+
+  h2 {
+    font-size: 1.6rem;
+  }
+
+  .subtitle {
+    margin-bottom: 1.5rem;
+  }
+
+  .form-group {
+    margin-bottom: 1.25rem;
+  }
+}
 </style>

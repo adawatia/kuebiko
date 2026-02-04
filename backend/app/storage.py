@@ -21,7 +21,7 @@ class SupabaseStorage:
         self.client: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
         self.bucket_name = settings.SUPABASE_BUCKET_NAME
     
-    def upload_pdf(self, file_content: bytes, comic_name: str, filename: Optional[str] = None) -> str:
+    def upload_pdf(self, file_content: bytes, comic_name: str, filename: Optional[str] = None, comic_id: Optional[int] = None) -> str:
         """
         Upload a PDF file to Supabase Storage organized by comic name.
         
@@ -38,18 +38,15 @@ class SupabaseStorage:
         elif not filename.endswith('.pdf'):
             filename = f"{filename}.pdf"
         
-        # Sanitize comic name for folder path
-        safe_comic_name = self._sanitize_folder_name(comic_name)
-        
-        # Upload to Supabase Storage in comic-specific folder
-        file_path = f"comics/{safe_comic_name}/{filename}"
+        folder_prefix = self._get_comic_folder_prefix(comic_name=comic_name, comic_id=comic_id)
+        file_path = f"{folder_prefix}/{filename}"
         
         try:
             # Use upsert to replace existing file if it exists
             self.client.storage.from_(self.bucket_name).upload(
                 file_path,
                 file_content,
-                {"content-type": "application/pdf", "upsert": "true"}
+                {"content-type": "application/pdf", "upsert": "true", "cacheControl": "3600"}
             )
             
             # Get public URL
@@ -59,7 +56,7 @@ class SupabaseStorage:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to upload PDF to Supabase: {str(e)}")
     
-    def upload_image(self, image_data: bytes, comic_name: str, extension: str = ".png") -> str:
+    def upload_image(self, image_data: bytes, comic_name: str, extension: str = ".png", comic_id: Optional[int] = None) -> str:
         """
         Upload an image to Supabase Storage organized by comic name.
         
@@ -71,11 +68,9 @@ class SupabaseStorage:
         Returns:
             Public URL of the uploaded image
         """
-        # Sanitize comic name for folder path
-        safe_comic_name = self._sanitize_folder_name(comic_name)
-        
+        folder_prefix = self._get_comic_folder_prefix(comic_name=comic_name, comic_id=comic_id)
         filename = f"cover{extension}"
-        file_path = f"comics/{safe_comic_name}/{filename}"
+        file_path = f"{folder_prefix}/{filename}"
         
         # Determine content type
         content_type = "image/png"
@@ -91,7 +86,7 @@ class SupabaseStorage:
             self.client.storage.from_(self.bucket_name).upload(
                 file_path,
                 image_data,
-                {"content-type": content_type, "upsert": "true"}
+                {"content-type": content_type, "upsert": "true", "cacheControl": "3600"}
             )
             
             # Get public URL
@@ -101,7 +96,7 @@ class SupabaseStorage:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to upload image to Supabase: {str(e)}")
     
-    def upload_base64_image(self, base64_str: str, comic_name: str) -> str:
+    def upload_base64_image(self, base64_str: str, comic_name: str, comic_id: Optional[int] = None) -> str:
         """
         Decode base64 string and upload image to Supabase organized by comic name.
         
@@ -140,7 +135,7 @@ class SupabaseStorage:
         elif "image/webp" in header:
             extension = ".webp"
         
-        return self.upload_image(data, comic_name, extension)
+        return self.upload_image(data, comic_name, extension, comic_id=comic_id)
     
     def _sanitize_folder_name(self, name: str) -> str:
         """
@@ -167,6 +162,46 @@ class SupabaseStorage:
             sanitized = hashlib.md5(name.encode()).hexdigest()[:8]
         
         return sanitized
+
+    def _get_comic_folder_prefix(self, comic_name: str, comic_id: Optional[int] = None) -> str:
+        """Return a stable folder prefix for a comic.
+
+        Prefer numeric ID (stable even if title changes), fallback to sanitized name.
+        """
+        if comic_id is not None:
+            return f"comics/{comic_id}"
+
+        safe_comic_name = self._sanitize_folder_name(comic_name)
+        return f"comics/{safe_comic_name}"
+
+    def delete_comic_folder(self, comic_id: int) -> bool:
+        """Delete all objects within a comic folder."""
+        prefix = f"comics/{comic_id}"
+        try:
+            objects = self._list_objects(prefix)
+            if not objects:
+                return True
+
+            paths = []
+            for obj in objects:
+                name = obj.get("name") if isinstance(obj, dict) else None
+                if name:
+                    paths.append(f"{prefix}/{name}")
+
+            if paths:
+                self.client.storage.from_(self.bucket_name).remove(paths)
+            return True
+        except Exception as e:
+            print(f"Failed to delete comic folder from Supabase: {str(e)}")
+            return False
+
+    def _list_objects(self, prefix: str):
+        """List objects in a prefix, compatible with multiple supabase-py versions."""
+        storage = self.client.storage.from_(self.bucket_name)
+        try:
+            return storage.list(prefix, {"limit": 1000, "offset": 0})
+        except TypeError:
+            return storage.list(prefix)
     
     def delete_file(self, file_url: str) -> bool:
         """

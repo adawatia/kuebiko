@@ -33,20 +33,27 @@ def create_comic(
         raise HTTPException(status_code=400, detail="A comic with this title already exists.")
 
     try:
-        cover_url = None
-        if comic.cover_image:
-            cover_url = supabase_storage.upload_base64_image(comic.cover_image, comic.title)
-
         comic_db = Comic(
             title=comic.title,
             description=comic.description,
             genres=','.join([g.value for g in comic.genres]),
             pdf_url=None,
-            cover_image_url=cover_url
+            cover_image_url=None
         )
         db.add(comic_db)
         db.commit()
         db.refresh(comic_db)
+
+        cover_url = None
+        if comic.cover_image:
+            cover_url = supabase_storage.upload_base64_image(
+                comic.cover_image,
+                comic.title,
+                comic_id=comic_db.id
+            )
+            comic_db.cover_image_url = cover_url
+            db.commit()
+            db.refresh(comic_db)
         
         try:
             genre_objs = [ComicGenre(g) for g in (comic_db.genres or "").split(',') if g]
@@ -78,6 +85,13 @@ def create_comic(
             except:
                 pass
         db.rollback()
+        # If comic was created, remove it to avoid orphan rows
+        try:
+            if 'comic_db' in locals() and comic_db and comic_db.id:
+                db.delete(comic_db)
+                db.commit()
+        except Exception:
+            db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to create comic: {str(e)}")
 
 @router.get("/", response_model=ComicListResponse)
@@ -190,8 +204,12 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
             if cover_image_b64:
                 # Use new title if being updated, otherwise use current title
                 title_for_storage = new_title if new_title else comic.title
-                # Save new image to Supabase
-                new_cover_url = supabase_storage.upload_base64_image(cover_image_b64, title_for_storage)
+                # Save new image to Supabase (stable folder by ID)
+                new_cover_url = supabase_storage.upload_base64_image(
+                    cover_image_b64,
+                    title_for_storage,
+                    comic_id=comic.id
+                )
                 
                 # Mark old image for deletion (only if it's different)
                 if comic.cover_image_url and comic.cover_image_url != new_cover_url:
@@ -280,7 +298,7 @@ async def upload_comic_pdf(
     old_pdf_url = comic.pdf_url
     try:
         # Upload to Supabase in comic-specific folder
-        pdf_url = supabase_storage.upload_pdf(contents, comic.title, "comic.pdf")
+        pdf_url = supabase_storage.upload_pdf(contents, comic.title, "comic.pdf", comic_id=comic.id)
         
         # Update database
         comic.pdf_url = pdf_url
@@ -326,6 +344,13 @@ def bulk_delete_comics(comic_ids: List[int], db: Session = Depends(get_db), user
                 supabase_storage.delete_file(cover_url)
             except Exception:
                 pass
+
+        # Cleanup folders to remove hierarchy
+        for comic_id in comic_ids:
+            try:
+                supabase_storage.delete_comic_folder(comic_id)
+            except Exception:
+                pass
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to batch delete comics: {str(e)}")
@@ -355,6 +380,12 @@ def delete_comic(comic_id: int, db: Session = Depends(get_db), user: User = Depe
                 supabase_storage.delete_file(cover_url)
             except Exception:
                 pass
+
+        # Remove any remaining objects in the comic folder
+        try:
+            supabase_storage.delete_comic_folder(comic_id)
+        except Exception:
+            pass
         
         return
     except Exception as e:

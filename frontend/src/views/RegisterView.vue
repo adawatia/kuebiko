@@ -33,6 +33,9 @@ const handleRegister = async () => {
 <template>
   <div class="auth-container">
     <div class="auth-card">
+      <div class="logo-container">
+        <img src="../assets/logo.svg" alt="Kuebiko Logo" class="auth-logo" />
+      </div>
       <h2>Create Account</h2>
       <p class="subtitle">Join to start reading comics</p>
       
@@ -76,6 +79,17 @@ const handleRegister = async () => {
   width: 100%;
   max-width: 400px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.logo-container {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.auth-logo {
+  height: 120px;
+  width: auto;
 }
 
 h2 {
@@ -130,5 +144,33 @@ label {
 
 .footer-links a:hover {
   text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .auth-container {
+    padding: 1.5rem 1rem;
+    min-height: auto;
+  }
+
+  .auth-card {
+    padding: 1.75rem;
+    border-radius: 14px;
+  }
+
+  .auth-logo {
+    height: 96px;
+  }
+
+  h2 {
+    font-size: 1.6rem;
+  }
+
+  .subtitle {
+    margin-bottom: 1.5rem;
+  }
+
+  .form-group {
+    margin-bottom: 1.25rem;
+  }
 }
 </style>
