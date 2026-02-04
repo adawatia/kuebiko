@@ -159,4 +159,64 @@ main {
     max-width: 1200px;
     margin: 0 auto;
 }
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+    header {
+        padding: 0.8rem 1rem;
+    }
+
+    nav {
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .logo {
+        font-size: 1.2rem;
+    }
+
+    .logo-img {
+        height: 60px;
+    }
+
+    .nav-links {
+        flex-wrap: wrap;
+        gap: 0.8rem;
+        justify-content: center;
+        width: 100%;
+    }
+
+    .user-info {
+        font-size: 0.8rem;
+        padding: 0.3rem 0.6rem;
+    }
+
+    .logout-btn {
+        font-size: 0.8rem;
+        padding: 0.4rem 0.8rem;
+    }
+
+    main {
+        padding: 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .logo {
+        font-size: 1rem;
+    }
+
+    .logo-img {
+        height: 50px;
+    }
+
+    .nav-links {
+        font-size: 0.85rem;
+        gap: 0.5rem;
+    }
+
+    .nav-links a {
+        padding: 0.3rem 0.5rem;
+    }
+}
 </style>

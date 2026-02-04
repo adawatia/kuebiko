@@ -301,4 +301,49 @@ label {
     border: 1px solid rgba(242, 139, 130, 0.2);
     text-align: center;
 }
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+    .create-container {
+        padding: 1rem;
+    }
+
+    h2 {
+        font-size: 1.8rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .create-form {
+        padding: 1.5rem;
+        border-radius: 16px;
+    }
+
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+
+    .genre-select {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    }
+}
+
+@media (max-width: 480px) {
+    h2 {
+        font-size: 1.5rem;
+    }
+
+    .create-form {
+        padding: 1.2rem;
+    }
+
+    .genre-select {
+        grid-template-columns: 1fr 1fr;
+        gap: 0.6rem;
+    }
+
+    .custom-checkbox {
+        font-size: 0.85rem;
+        padding: 0.6rem;
+    }
+}
 </style>

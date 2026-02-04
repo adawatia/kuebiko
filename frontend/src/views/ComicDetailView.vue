@@ -1144,4 +1144,139 @@ const handleUploadCover = async (event: Event) => {
     min-height: 50vh;
     display: block;
 }
+
+/* Mobile Responsiveness */
+@media (max-width: 1024px) {
+    .detail-container {
+        padding: 1.5rem;
+    }
+
+    .detail-header {
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .header-text {
+        max-width: 100%;
+    }
+}
+
+@media (max-width: 768px) {
+    .detail-container {
+        padding: 1rem;
+    }
+
+    .detail-header h1 {
+        font-size: 2rem;
+    }
+
+    .meta-info {
+        font-size: 0.9rem;
+    }
+
+    .actions {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .actions .btn {
+        width: 100%;
+    }
+
+    .admin-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Reading Mode */
+    .reader-overlay {
+        padding: 0;
+    }
+
+    .reader-content {
+        border-radius: 0;
+        max-width: 100%;
+    }
+
+    .reader-header {
+        padding: 0.8rem 1rem;
+        border-radius: 0;
+    }
+
+    .reader-title {
+        font-size: 1rem;
+    }
+
+    .close-btn {
+        width: 40px;
+        height: 40px;
+    }
+
+    .reader-controls {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        padding: 0.8rem 1rem;
+    }
+
+    .reader-controls-center {
+        order: 3;
+        width: 100%;
+        justify-content: space-between;
+        gap: 0.5rem;
+    }
+
+    .ctrl-btn {
+        padding: 0.6rem;
+        font-size: 0.85rem;
+    }
+
+    .page-counter {
+        font-size: 0.8rem;
+        min-width: 70px;
+        padding: 0.3rem 0.6rem;
+    }
+
+    .zoom-label {
+        font-size: 0.8rem;
+    }
+
+    .reader-body {
+        padding: 1rem 0.5rem;
+    }
+
+    .pdf-wrapper {
+        max-width: 100vw;
+    }
+}
+
+@media (max-width: 480px) {
+    .detail-header h1 {
+        font-size: 1.5rem;
+    }
+
+    .description-box h3 {
+        font-size: 1.2rem;
+    }
+
+    .description-box p {
+        font-size: 0.95rem;
+    }
+
+    .genre-tag {
+        font-size: 0.75rem;
+        padding: 0.3rem 0.7rem;
+    }
+
+    .ctrl-btn {
+        padding: 0.5rem;
+    }
+
+    .reader-controls {
+        padding: 0.6rem 0.8rem;
+    }
+
+    .close-btn {
+        width: 36px;
+        height: 36px;
+    }
+}
 </style>

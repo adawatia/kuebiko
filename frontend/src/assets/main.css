@@ -124,3 +124,59 @@ input:focus, textarea:focus, select:focus {
 .page-transition {
     animation: fadeIn 0.4s ease-out;
 }
+
+/* Mobile Responsive Utilities */
+@media (max-width: 768px) {
+    body {
+        font-size: 14px;
+    }
+
+    input, textarea, select {
+        padding: 0.7rem 0.85rem;
+        font-size: 16px; /* Prevents zoom on iOS */
+    }
+
+    .btn {
+        padding: 0.7rem 1.2rem;
+        font-size: 0.9rem;
+    }
+
+    h1 {
+        font-size: 2rem;
+    }
+
+    h2 {
+        font-size: 1.6rem;
+    }
+
+    h3 {
+        font-size: 1.3rem;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        font-size: 13px;
+    }
+
+    input, textarea, select {
+        padding: 0.65rem 0.8rem;
+    }
+
+    .btn {
+        padding: 0.65rem 1rem;
+        font-size: 0.85rem;
+    }
+
+    h1 {
+        font-size: 1.75rem;
+    }
+
+    h2 {
+        font-size: 1.4rem;
+    }
+
+    h3 {
+        font-size: 1.15rem;
+    }
+}
