@@ -9,8 +9,8 @@ export interface Comic {
   title: string;
   description: string;
   genres: string[]; // Backend returns list of strings/enums
-  pdf_path: string | null;
-  cover_image_path: string | null;
+  pdf_url: string | null;
+  cover_image_url: string | null;
 }
 
 export interface ComicListResponse {

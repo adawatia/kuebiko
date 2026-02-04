@@ -12,3 +12,5 @@ psycopg2-binary
 asyncpg
 # FastAPI Users for authentication
 fastapi-users[sqlalchemy]
+# Supabase storage client
+supabase

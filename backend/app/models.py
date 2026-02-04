@@ -20,8 +20,8 @@ class Comic(Base):
     title = Column(String, index=True)
     description = Column(Text)
     genres = Column(String, index=True)  # Comma-separated genres
-    pdf_path = Column(String)
-    cover_image_path = Column(String, nullable=True)
+    pdf_url = Column(String)  # Supabase URL for PDF
+    cover_image_url = Column(String, nullable=True)  # Supabase URL for cover image
 
 from fastapi_users.db import SQLAlchemyBaseUserTable
 

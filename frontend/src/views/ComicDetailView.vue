@@ -222,21 +222,19 @@ const closeReader = () => {
 
 const handleReadOnline = () => {
     try {
-        if (!comic.value?.pdf_path) {
+        if (!comic.value?.pdf_url) {
             alert('No PDF available for this comic.');
             return;
         }
         
-        const token = localStorage.getItem('token');
-        if (!token) {
-            alert('Please log in to read comics.');
-            router.push('/login');
+        if (!comic.value.pdf_url.startsWith('http')) {
+            alert('Invalid PDF URL.');
             return;
         }
         
+        // Use the Supabase URL directly
         pdfSource.value = {
-            url: `${API_URL}/comics/${comicId}/pdf`,
-            httpHeaders: { Authorization: `Bearer ${token}` },
+            url: comic.value.pdf_url,
             withCredentials: false
         };
 
@@ -313,7 +311,7 @@ onMounted(async () => {
     const shouldRead = route.query.read === 'true';
     await fetchComic();
     
-    if (shouldRead && comic.value?.pdf_path) {
+    if (shouldRead && comic.value?.pdf_url) {
         handleReadOnline();
     }
 });
@@ -365,6 +363,21 @@ const handleUploadPdf = async (event: Event) => {
     if (target.files && target.files.length > 0) {
         const file = target.files[0];
         if (!file) return;
+        
+        // Validate file type
+        if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+            alert('Please upload a PDF file.');
+            target.value = '';
+            return;
+        }
+        
+        // Check file size (100MB max)
+        if (file.size > 100 * 1024 * 1024) {
+            alert('PDF file is too large. Maximum size is 100MB.');
+            target.value = '';
+            return;
+        }
+        
         uploading.value = true;
         try {
             await uploadComicPdf(comicId, file);
@@ -372,8 +385,10 @@ const handleUploadPdf = async (event: Event) => {
             pdfSource.value = null; // Reset cached source
             pdfDocument.value = null; // Clear cached document
             alert('PDF uploaded successfully!');
-        } catch (e) {
-            alert('Failed to upload PDF');
+        } catch (e: any) {
+            console.error(e);
+            const errorMsg = e?.response?.data?.detail || 'Failed to upload PDF';
+            alert(errorMsg);
         } finally {
             uploading.value = false;
             // Clear input
@@ -389,6 +404,14 @@ const handleUploadCover = async (event: Event) => {
         const file = target.files[0];
         if (!file) return;
         
+        // Validate file type
+        const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+        if (!validTypes.includes(file.type)) {
+            alert('Invalid file type. Please upload a JPEG, PNG, GIF, or WebP image.');
+            target.value = '';
+            return;
+        }
+        
         if (file.size > 5 * 1024 * 1024) {
             alert("Image file is too large. Maximum size is 5MB.");
             target.value = '';
@@ -396,6 +419,10 @@ const handleUploadCover = async (event: Event) => {
         }
 
         const reader = new FileReader();
+        reader.onerror = () => {
+            alert('Failed to read image file.');
+            target.value = '';
+        };
         reader.onload = async () => {
             try {
                 uploading.value = true;
@@ -405,7 +432,8 @@ const handleUploadCover = async (event: Event) => {
                 alert('Cover image updated successfully!');
             } catch (e: any) {
                 console.error(e);
-                alert('Failed to update cover image.');
+                const errorMsg = e?.response?.data?.detail || 'Failed to update cover image.';
+                alert(errorMsg);
             } finally {
                 uploading.value = false;
                 target.value = '';
@@ -515,7 +543,7 @@ const handleUploadCover = async (event: Event) => {
     <!-- Background Hero -->
     <div class="hero-bg">
         <div class="hero-image" 
-             :style="comic.cover_image_path ? { backgroundImage: `url(${API_URL}/comics/${comic.id}/cover?v=${comic.cover_image_path})` } : {}">
+             :style="comic.cover_image_url ? { backgroundImage: `url(${comic.cover_image_url})` } : {}">
         </div>
         <div class="hero-overlay"></div>
     </div>
@@ -526,8 +554,8 @@ const handleUploadCover = async (event: Event) => {
             <!-- Left Column: Cover & Actions -->
             <div class="left-col">
                 <div class="cover-card">
-                    <div v-if="comic.cover_image_path" class="cover-image-wrapper">
-                        <img :src="`${API_URL}/comics/${comic.id}/cover?v=${comic.cover_image_path}`" :alt="comic.title" class="cover-image" />
+                    <div v-if="comic.cover_image_url" class="cover-image-wrapper">
+                        <img :src="comic.cover_image_url" :alt="comic.title" class="cover-image" />
                     </div>
                     <div v-else class="cover-placeholder">
                         <Book class="placeholder-icon" :size="48" />
@@ -536,7 +564,7 @@ const handleUploadCover = async (event: Event) => {
                 </div>
 
                 <div class="primary-actions">
-                    <button v-if="comic.pdf_path" @click="handleReadOnline" class="btn btn-read">
+                    <button v-if="comic.pdf_url" @click="handleReadOnline" class="btn btn-read">
                         <BookOpen class="icon" :size="20" /> Read Now
                     </button>
                     <button v-else disabled class="btn btn-disabled">
@@ -566,13 +594,13 @@ const handleUploadCover = async (event: Event) => {
                     <div class="admin-grid">
                         <label class="btn btn-admin" :class="{ 'uploading': uploading }">
                             <FileText :size="18" />
-                            {{ uploading ? 'Wait...' : (comic.pdf_path ? 'Replace PDF' : 'Upload PDF') }}
+                            {{ uploading ? 'Wait...' : (comic.pdf_url ? 'Replace PDF' : 'Upload PDF') }}
                             <input type="file" accept="application/pdf" @change="handleUploadPdf" :disabled="uploading" style="display:none;" />
                         </label>
                         
                         <label class="btn btn-admin" :class="{ 'uploading': uploading }">
                             <ImageIcon :size="18" />
-                            {{ uploading ? 'Wait...' : (comic.cover_image_path ? 'Replace Cover' : 'Upload Cover') }}
+                            {{ uploading ? 'Wait...' : (comic.cover_image_url ? 'Replace Cover' : 'Upload Cover') }}
                             <input type="file" accept="image/*" @change="handleUploadCover" :disabled="uploading" style="display:none;" />
                         </label>
 

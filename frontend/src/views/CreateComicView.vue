@@ -28,6 +28,14 @@ const handleImageUpload = (event: Event) => {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (file) {
+        // Validate file type
+        const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+        if (!validTypes.includes(file.type)) {
+            alert('Invalid file type. Please upload a JPEG, PNG, GIF, or WebP image.');
+            input.value = '';
+            return;
+        }
+        
         if (file.size > 5 * 1024 * 1024) {
             alert("Image file is too large. Maximum size is 5MB.");
             input.value = ''; // Clear input
@@ -35,6 +43,10 @@ const handleImageUpload = (event: Event) => {
         }
         
         const reader = new FileReader();
+        reader.onerror = () => {
+            alert('Failed to read image file.');
+            input.value = '';
+        };
         reader.onload = () => {
              coverImage.value = reader.result as string;
         };
@@ -47,6 +59,16 @@ const handleSubmit = async () => {
         errorMsg.value = "You do not have permission to upload comics.";
         return;
     }
+    
+    if (!title.value || !title.value.trim()) {
+        alert('Please enter a title');
+        return;
+    }
+    
+    if (!description.value || !description.value.trim()) {
+        alert('Please enter a description');
+        return;
+    }
 
     if (selectedGenres.value.length === 0) {
         alert('Please select at least one genre');
@@ -55,14 +77,12 @@ const handleSubmit = async () => {
 
     loading.value = true;
     errorMsg.value = '';
-    
-    let comicId: number | null = null;
 
     try {
         // 1. Create Comic Only
         const comic = await createComic({
-            title: title.value,
-            description: description.value,
+            title: title.value.trim(),
+            description: description.value.trim(),
             genres: selectedGenres.value,
             cover_image: coverImage.value
         });

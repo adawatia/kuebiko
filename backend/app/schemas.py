@@ -44,8 +44,8 @@ class ComicUpdate(BaseModel):
 class ComicOut(ComicBase):
     """Schema for comic output"""
     id: int = Field(..., description="Comic ID")
-    pdf_path: Optional[str] = Field(None, description="Path to PDF file")
-    cover_image_path: Optional[str] = Field(None, description="Path to cover image")
+    pdf_url: Optional[str] = Field(None, description="Supabase URL for PDF file")
+    cover_image_url: Optional[str] = Field(None, description="Supabase URL for cover image")
     
     model_config = ConfigDict(from_attributes=True)
 

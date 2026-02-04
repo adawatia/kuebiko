@@ -137,8 +137,8 @@ const getGenreBadgeColor = (genre: string) => {
                 :class="{ 'selected': selectedComics.has(comic.id) }"
                 @click="toggleSelection(comic.id)"
             >
-                <div class="card-image" v-if="comic.cover_image_path">
-                    <img :src="`${API_URL}/comics/${comic.id}/cover?v=${comic.cover_image_path}`" :alt="comic.title" loading="lazy" />
+                <div class="card-image" v-if="comic.cover_image_url">
+                    <img :src="comic.cover_image_url" :alt="comic.title" loading="lazy" />
                 </div>
                 <div class="card-image placeholder" v-else>
                     <span>{{ comic.title.charAt(0) }}</span>
