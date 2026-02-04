@@ -14,5 +14,11 @@ services:
         sync: false
       - key: ADDITIONAL_CORS_ORIGINS
         sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET_NAME
+        value: comics
       - key: PYTHON_VERSION
         value: 3.11.0
