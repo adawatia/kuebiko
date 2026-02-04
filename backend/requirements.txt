@@ -7,3 +7,6 @@ alembic
 SQLAlchemy
 # Add python-dotenv to requirements
 python-dotenv
+# PostgreSQL drivers
+psycopg2-binary
+asyncpg

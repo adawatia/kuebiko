@@ -2,11 +2,26 @@
 
 A modern RESTful API for managing comics and their PDF files, built with FastAPI and SQLAlchemy.
 
+## Project Structure
+
+```
+comic/
+├── backend/           # Backend API (FastAPI + PostgreSQL)
+│   ├── app/          # Application code
+│   ├── alembic/      # Database migrations
+│   ├── main.py       # Entry point
+│   └── README.md     # Backend setup guide
+├── frontend/         # Frontend (Vue.js)
+│   └── src/         # Frontend source code
+└── docker-compose.yml # PostgreSQL setup
+```
+
 ## Features
 
 - ✅ **JSON-based API** - Clean REST endpoints with JSON request/response
 - ✅ **PDF Management** - Upload, download, and manage comic PDF files
 - ✅ **Genre Classification** - Categorize comics with multiple genres
+- ✅ **PostgreSQL Database** - Robust and scalable database
 - ✅ **Input Validation** - Robust validation using Pydantic schemas
 - ✅ **Advanced Search** - Search by title or description
 - ✅ **Rich Filtering** - Filter by multiple genres
@@ -14,6 +29,67 @@ A modern RESTful API for managing comics and their PDF files, built with FastAPI
 - ✅ **CORS Support** - Ready for frontend integration
 - ✅ **Error Handling** - Comprehensive error handling with proper status codes
 - ✅ **Database Migrations** - Alembic for schema management
+
+## Quick Start
+
+### Option 1: Using Docker Compose (Recommended)
+
+1. **Start PostgreSQL**
+```bash
+docker-compose up -d
+```
+
+2. **Install backend dependencies**
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+3. **Set up environment**
+```bash
+cd backend
+cp .env.example .env
+# Edit .env if needed (default PostgreSQL settings work with docker-compose)
+```
+
+4. **Run migrations**
+```bash
+cd backend
+alembic upgrade head
+```
+
+5. **Create admin user**
+```bash
+cd backend
+python create_superuser.py
+```
+
+6. **Run the application**
+```bash
+cd backend
+python main.py
+```
+
+### Option 2: Manual PostgreSQL Setup
+
+See [backend/README.md](backend/README.md) for detailed instructions.
+
+## Frontend Setup
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The frontend will be available at `http://localhost:5173`
+
+## API Access
+
+- **API**: http://localhost:8000
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
 
 ## Authentication
 
@@ -23,58 +99,11 @@ The API uses JWT authentication.
 1. **Admin (Superuser)**: Can manage comics (create, update, delete, upload PDF).
 2. **User**: Can view and read comics.
 
-### Setup
-To create an admin user, run the helper script:
-```bash
-python create_superuser.py
-```
-
 ### API Endpoints
 - **Register**: `POST /auth/register` (Create regular user)
 - **Login**: `POST /auth/jwt/login` (Get access token)
 - **Logout**: `POST /auth/jwt/logout`
 - **Comics**: `/comics` (See API docs for details)
-
-### Swagger UI
-Navigate to `http://localhost:8000/docs`.
-- Click "Authorize" button.
-- Login with your credentials.
-- Test the endpoints.
-
-## Quick Start
-
-### Installation
-
-1. **Clone the repository**
-```bash
-git clone <repository-url>
-cd comic
-```
-
-2. **Install dependencies**
-```bash
-pip install -r requirements.txt
-```
-
-3. **Set up environment**
-```bash
-# Create .env file
-echo "DATABASE_URL=sqlite:///./comics.db" > .env
-```
-
-4. **Run the application**
-```bash
-python main.py
-```
-
-The API will be available at `http://localhost:8000`
-
-### Interactive Documentation
-
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-
-## API Endpoints
 
 ## API Endpoints
 
@@ -138,47 +167,32 @@ curl "http://localhost:8000/comics/" \
 - Mystery
 - Other
 
-## Project Structure
-
-The project follows a modular structure:
-- `app/` - Core application logic
-- `app/api/` - API endpoints
-- `app/models.py` - Database models
-- `app/schemas.py` - Pydantic models
-
-## API Documentation
-
-Interactive documentation is available at `/docs` (Swagger UI).
-
 ## Technology Stack
 
 - **FastAPI** - Modern web framework
 - **SQLAlchemy** - ORM for database operations
+- **PostgreSQL** - Robust database
 - **Pydantic** - Data validation
 - **Alembic** - Database migrations
-- **SQLite** - Database (easily swappable)
+- **Vue.js** - Frontend framework
 
 ## Development
 
 ### Running Tests
 ```bash
+cd backend
 pytest app/tests/
 ```
 
 ### Database Migrations
 ```bash
+cd backend
 # Create migration
 alembic revision --autogenerate -m "description"
 
 # Apply migrations
 alembic upgrade head
 ```
-
-### Code Quality
-- Type hints throughout
-- Comprehensive error handling
-- Input validation
-- Clean code principles
 
 ## License
 
