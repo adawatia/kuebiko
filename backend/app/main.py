@@ -29,6 +29,7 @@ allowed_origins = [
     "http://localhost:3000",
     "http://localhost:5173",  # Vite default
     "https://comic-eight-dusky.vercel.app",
+    "https://kuebiko-pr418eqvo-devansh-sharmas-projects-0a22b741.vercel.app",
 ]
 
 # Add additional origins from environment variable (for preview deployments)
