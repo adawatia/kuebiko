@@ -196,14 +196,19 @@ const getGenreBadgeColor = (genre: string) => {
     margin-bottom: 2.5rem;
     flex-wrap: wrap;
     gap: 1.5rem;
-    background: linear-gradient(to right, rgba(20, 20, 20, 0), rgba(20, 20, 20, 0.5));
-    border-radius: var(--border-radius);
-    padding: 1rem 0;
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 1.5rem 2rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
 }
 
 h1 {
     font-size: 3rem;
     font-weight: 800;
+    margin: 0;
     background: linear-gradient(135deg, #fff 0%, #aaa 100%);
     -webkit-background-clip: text;
     background-clip: text;
@@ -215,7 +220,8 @@ h1 {
 
 /* Search Bar */
 .search-bar input {
-    width: 320px;
+    width: 100%;
+    max-width: 320px;
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
     backdrop-filter: blur(var(--glass-blur));
@@ -227,7 +233,7 @@ h1 {
 }
 
 .search-bar input:focus {
-    width: 350px;
+    max-width: 350px;
     border-color: var(--primary);
     box-shadow: 0 4px 25px rgba(138, 180, 248, 0.2);
 }
@@ -235,7 +241,7 @@ h1 {
 /* Grid Layout */
 .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 2rem;
 }
 
@@ -494,30 +500,35 @@ h3 {
 
 @media (max-width: 768px) {
     .home-container {
-        padding-bottom: 4rem;
+        padding-bottom: 6rem; /* Reduced to minimize empty space */
     }
 
     .header-section {
         flex-direction: column;
         align-items: flex-start;
-        padding: 1rem;
-        margin-bottom: 1.5rem;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
     }
 
     h1 {
         font-size: 2rem;
+        line-height: 1.2;
+    }
+
+    .search-bar {
+        width: 100%;
     }
 
     .search-bar input {
-        width: 100%;
+        max-width: 100%;
     }
 
     .search-bar input:focus {
-        width: 100%;
+        max-width: 100%;
     }
 
     .grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
         gap: 1.5rem;
     }
 

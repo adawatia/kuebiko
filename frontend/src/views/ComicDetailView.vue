@@ -628,7 +628,8 @@ const handleUploadCover = async (event: Event) => {
     position: relative;
     min-height: 90vh;
     color: #fff;
-    overflow-x: hidden;
+    width: 100%;
+    /* overflow-x: hidden; removed to prevent scroll jank */
 }
 
 .content-container {
@@ -684,9 +685,25 @@ const handleUploadCover = async (event: Event) => {
     }
     
     .left-col {
-        max-width: 400px;
+        max-width: 100%;
         margin: 0 auto;
         width: 100%;
+        /* Ensure image doesn't force overflow */
+    }
+
+    .cover-card {
+        max-width: 300px;
+        margin: 0 auto;
+    }
+}
+
+@media (max-width: 480px) {
+    .comic-title {
+        font-size: 2.2rem;
+    }
+    
+    .content-container {
+        padding: 2rem 1rem 4rem 1rem;
     }
 }
 
@@ -699,6 +716,7 @@ const handleUploadCover = async (event: Event) => {
     background: #1e1e1e;
     aspect-ratio: 2/3;
     position: relative;
+    width: 100%;
 }
 
 .cover-card:hover {
@@ -817,21 +835,34 @@ const handleUploadCover = async (event: Event) => {
 }
 
 .description-box {
-    margin-bottom: 3rem;
+    margin-bottom: 2.5rem;
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 2rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
 }
 
 .description-box h3 {
-    font-size: 1.5rem;
+    font-size: 1.1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
     margin-bottom: 1rem;
     color: var(--primary);
-    font-weight: 600;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
 }
 
 .description-box p {
-    font-size: 1.1rem;
-    line-height: 1.8;
-    color: #ccc;
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: #e0e0e0;
     white-space: pre-wrap;
+    font-weight: 300;
 }
 
 /* Admin Panel */
@@ -1147,136 +1178,104 @@ const handleUploadCover = async (event: Event) => {
 
 /* Mobile Responsiveness */
 @media (max-width: 1024px) {
-    .detail-container {
-        padding: 1.5rem;
+    .content-container {
+        padding: 2rem;
     }
 
-    .detail-header {
-        flex-direction: column;
-        gap: 1.5rem;
+    .comic-layout {
+        gap: 3rem;
+    }
+}
+
+@media (max-width: 900px) {
+    .comic-layout {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+    }
+    
+    .left-col {
+        max-width: 400px;
+        margin: 0 auto;
+        width: 100%;
     }
 
-    .header-text {
-        max-width: 100%;
+    .cover-card {
+        max-width: 300px;
+        margin: 0 auto;
+    }
+    
+    .primary-actions {
+        max-width: 300px;
+        margin: 1.5rem auto 0;
+        width: 100%;
+    }
+
+    .hero-bg {
+        display: none; /* Disable fixed background on mobile to prevent bleed */
     }
 }
 
 @media (max-width: 768px) {
-    .detail-container {
-        padding: 1rem;
+    .content-container {
+        padding: 1.5rem 1rem;
     }
 
-    .detail-header h1 {
-        font-size: 2rem;
-    }
-
-    .meta-info {
-        font-size: 0.9rem;
-    }
-
-    .actions {
-        flex-direction: column;
-        width: 100%;
-    }
-
-    .actions .btn {
-        width: 100%;
+    .comic-title {
+        font-size: 2.5rem;
     }
 
     .admin-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     }
 
-    /* Reading Mode */
-    .reader-overlay {
-        padding: 0;
-    }
-
-    .reader-content {
-        border-radius: 0;
-        max-width: 100%;
-    }
-
+    /* Reader Mobile Styles */
     .reader-header {
+        width: 95vw;
         padding: 0.8rem 1rem;
-        border-radius: 0;
+        top: 1rem;
     }
 
     .reader-title {
-        font-size: 1rem;
+        max-width: 150px;
+        font-size: 0.9rem;
     }
 
-    .close-btn {
-        width: 40px;
-        height: 40px;
-    }
-
-    .reader-controls {
-        flex-wrap: wrap;
-        gap: 0.5rem;
+    .reader-footer {
+        width: 95vw;
         padding: 0.8rem 1rem;
+        bottom: 1rem;
+        flex-direction: column;
+        gap: 1rem;
     }
-
-    .reader-controls-center {
-        order: 3;
+    
+    .zoom-controls {
         width: 100%;
-        justify-content: space-between;
-        gap: 0.5rem;
+        justify-content: center;
     }
-
-    .ctrl-btn {
-        padding: 0.6rem;
-        font-size: 0.85rem;
-    }
-
-    .page-counter {
-        font-size: 0.8rem;
-        min-width: 70px;
-        padding: 0.3rem 0.6rem;
-    }
-
-    .zoom-label {
-        font-size: 0.8rem;
-    }
-
-    .reader-body {
-        padding: 1rem 0.5rem;
-    }
-
-    .pdf-wrapper {
-        max-width: 100vw;
+    
+    .pagination-controls {
+        width: 100%;
+        justify-content: center;
     }
 }
 
 @media (max-width: 480px) {
-    .detail-header h1 {
-        font-size: 1.5rem;
-    }
-
-    .description-box h3 {
-        font-size: 1.2rem;
-    }
-
-    .description-box p {
-        font-size: 0.95rem;
+    .comic-title {
+        font-size: 2rem;
     }
 
     .genre-tag {
         font-size: 0.75rem;
-        padding: 0.3rem 0.7rem;
+        padding: 0.3rem 0.6rem;
     }
 
-    .ctrl-btn {
-        padding: 0.5rem;
+    .admin-grid {
+        grid-template-columns: 1fr; /* Stack buttons on very small screens */
     }
 
-    .reader-controls {
-        padding: 0.6rem 0.8rem;
-    }
-
-    .close-btn {
-        width: 36px;
-        height: 36px;
+    .btn-read {
+        font-size: 1rem;
+        padding: 0.8rem;
     }
 }
 </style>
