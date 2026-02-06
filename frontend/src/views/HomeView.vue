@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, reactive } from 'vue';
+import { Search } from 'lucide-vue-next';
 import { getComics, bulkDeleteComics, type Comic, type ComicListResponse } from '../api/comics';
 import { useAuth } from '../store';
 import { API_URL } from '../api/client';
@@ -101,9 +102,17 @@ const getGenreBadgeColor = (genre: string) => {
 <template>
   <div class="home-container">
     <div class="header-section">
-        <h1>Explore Comics</h1>
-        <div class="search-bar">
-            <input type="text" v-model.lazy="search" placeholder="Search by title or description..." />
+        <div class="header-title">
+            <h1>Explore Comics</h1>
+            <p class="subtitle">Discover your next favorite story</p>
+        </div>
+        <div class="search-wrapper">
+            <Search class="search-icon" :size="20" />
+            <input 
+                type="text" 
+                v-model.lazy="search" 
+                placeholder="Search titles, characters..." 
+            />
         </div>
     </div>
 
@@ -186,6 +195,8 @@ const getGenreBadgeColor = (genre: string) => {
     max-width: 1400px;
     margin: 0 auto;
     padding-bottom: 8rem;
+    width: 100%;
+    overflow-x: hidden;
 }
 
 /* Header Section */
@@ -193,49 +204,76 @@ const getGenreBadgeColor = (genre: string) => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 2.5rem;
+    margin-bottom: 3rem;
     flex-wrap: wrap;
-    gap: 1.5rem;
-    background: rgba(255, 255, 255, 0.03);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 16px;
-    padding: 1.5rem 2rem;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    gap: 2rem;
+    padding: 1rem 0;
 }
 
-h1 {
-    font-size: 3rem;
+.header-title h1 {
+    font-size: 3.5rem;
     font-weight: 800;
     margin: 0;
-    background: linear-gradient(135deg, #fff 0%, #aaa 100%);
+    line-height: 1.1;
+    background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    letter-spacing: -0.03em;
+    letter-spacing: -0.02em;
 }
 
-
+.subtitle {
+    margin: 0.5rem 0 0 0;
+    color: var(--text-muted);
+    font-size: 1.1rem;
+    font-weight: 400;
+}
 
 /* Search Bar */
-.search-bar input {
+.search-wrapper {
+    position: relative;
     width: 100%;
-    max-width: 320px;
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
-    backdrop-filter: blur(var(--glass-blur));
-    color: white;
-    border-radius: 50px;
-    padding: 0.85rem 1.8rem;
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    max-width: 400px;
 }
 
-.search-bar input:focus {
-    max-width: 350px;
-    border-color: var(--primary);
-    box-shadow: 0 4px 25px rgba(138, 180, 248, 0.2);
+.search-icon {
+    position: absolute;
+    left: 1.2rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #a5b4fc;
+    pointer-events: none;
+    transition: color 0.3s;
+    z-index: 2;
+}
+
+.search-wrapper input {
+    width: 100%;
+    background: rgba(30, 41, 59, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(12px);
+    color: white;
+    border-radius: 50px;
+    padding: 1rem 1.5rem 1rem 3.2rem;
+    font-size: 1rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.search-wrapper input:focus {
+    background: rgba(30, 41, 59, 0.6);
+    border-color: #818cf8;
+    box-shadow: 0 0 0 4px rgba(129, 140, 248, 0.15), 0 10px 25px rgba(0,0,0,0.2);
+    outline: none;
+    transform: translateY(-1px);
+}
+
+.search-wrapper input:focus + .search-icon {
+    color: #818cf8;
+}
+
+.search-wrapper input::placeholder {
+    color: rgba(255, 255, 255, 0.4);
 }
 
 /* Grid Layout */
@@ -500,30 +538,24 @@ h3 {
 
 @media (max-width: 768px) {
     .home-container {
-        padding-bottom: 6rem; /* Reduced to minimize empty space */
+        padding-bottom: 6rem;
+        padding-left: 1rem;
+        padding-right: 1rem;
     }
 
     .header-section {
         flex-direction: column;
         align-items: flex-start;
-        padding: 1.5rem;
-        margin-bottom: 2rem;
+        padding: 0 1rem;
+        margin-bottom: 2.5rem;
+        gap: 1.5rem;
     }
 
-    h1 {
-        font-size: 2rem;
-        line-height: 1.2;
+    .header-title h1 {
+        font-size: 2.5rem;
     }
 
-    .search-bar {
-        width: 100%;
-    }
-
-    .search-bar input {
-        max-width: 100%;
-    }
-
-    .search-bar input:focus {
+    .search-wrapper {
         max-width: 100%;
     }
 

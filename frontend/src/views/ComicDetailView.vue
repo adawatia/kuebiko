@@ -629,7 +629,7 @@ const handleUploadCover = async (event: Event) => {
     min-height: 90vh;
     color: #fff;
     width: 100%;
-    /* overflow-x: hidden; removed to prevent scroll jank */
+    overflow-x: hidden;
 }
 
 .content-container {
@@ -638,6 +638,8 @@ const handleUploadCover = async (event: Event) => {
     margin: 0 auto;
     padding: 3rem 2rem;
     z-index: 2;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 /* Background Hero */
@@ -1000,11 +1002,13 @@ const handleUploadCover = async (event: Event) => {
 .reader-content {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     background: #050505;
     display: flex;
     justify-content: center;
     padding-top: 100px;
     padding-bottom: 120px;
+    -webkit-overflow-scrolling: touch;
 }
 
 .reader-footer {
@@ -1218,10 +1222,12 @@ const handleUploadCover = async (event: Event) => {
 @media (max-width: 768px) {
     .content-container {
         padding: 1.5rem 1rem;
+        overflow-x: hidden;
     }
 
     .comic-title {
         font-size: 2.5rem;
+        word-wrap: break-word;
     }
 
     .admin-grid {
@@ -1233,11 +1239,17 @@ const handleUploadCover = async (event: Event) => {
         width: 95vw;
         padding: 0.8rem 1rem;
         top: 1rem;
+        box-sizing: border-box;
     }
 
     .reader-title {
         max-width: 150px;
         font-size: 0.9rem;
+    }
+
+    .reader-content {
+        padding-top: 80px;
+        padding-bottom: 140px;
     }
 
     .reader-footer {
@@ -1246,6 +1258,7 @@ const handleUploadCover = async (event: Event) => {
         bottom: 1rem;
         flex-direction: column;
         gap: 1rem;
+        box-sizing: border-box;
     }
     
     .zoom-controls {
