@@ -65,6 +65,15 @@ def create_comic(
                 storage_client.delete_file(cover_url)
             except:
                 pass
+        
+        # If comic was created but image upload failed, remove it to avoid orphan rows
+        try:
+            if 'comic_db' in locals() and comic_db and comic_db.id:
+                db.delete(comic_db)
+                db.commit()
+        except Exception:
+            db.rollback()
+            
         raise
     except Exception as e:
         # Cleanup image from storage if DB fails
@@ -152,10 +161,15 @@ def list_comics(
 
 @router.get("/{comic_id}", response_model=ComicOut)
 def get_comic(comic_id: int, db: Session = Depends(get_db), user: User = Depends(current_active_user)):
-    comic = db.query(Comic).options(joinedload(Comic.chapters)).filter(Comic.id == comic_id).first()
-    if not comic:
-        raise HTTPException(status_code=404, detail="Comic not found")
-    return comic
+    try:
+        comic = db.query(Comic).options(joinedload(Comic.chapters)).filter(Comic.id == comic_id).first()
+        if not comic:
+            raise HTTPException(status_code=404, detail="Comic not found")
+        return comic
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch comic: {str(e)}")
 
 @router.put("/{comic_id}", response_model=ComicOut)
 def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends(get_db), user: User = Depends(current_superuser)):
@@ -164,7 +178,7 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
     if not comic:
         raise HTTPException(status_code=404, detail="Comic not found")
     try:
-        update_data = comic_update.dict(exclude_unset=True)
+        update_data = comic_update.model_dump(exclude_unset=True)
         
         # Check duplicate title if title is being updated
         new_title = None

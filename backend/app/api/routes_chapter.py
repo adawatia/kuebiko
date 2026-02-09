@@ -42,7 +42,7 @@ def create_chapter(
             comic_id=chapter.comic_id,
             chapter_number=chapter.chapter_number,
             title=chapter.title,
-            pdf_url="", # Upload separately
+            pdf_url=None, # Upload separately
             page_count=chapter.page_count,
             is_published=chapter.is_published,
             published_at=published_at
@@ -57,10 +57,15 @@ def create_chapter(
 
 @router.get("/{chapter_id}", response_model=ChapterOut)
 def get_chapter(chapter_id: int, db: Session = Depends(get_db), user: User = Depends(current_active_user)):
-    chapter = db.query(Chapter).filter(Chapter.id == chapter_id).first()
-    if not chapter:
-        raise HTTPException(status_code=404, detail="Chapter not found")
-    return chapter
+    try:
+        chapter = db.query(Chapter).filter(Chapter.id == chapter_id).first()
+        if not chapter:
+            raise HTTPException(status_code=404, detail="Chapter not found")
+        return chapter
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch chapter: {str(e)}")
 
 @router.get("/", response_model=List[ChapterOut])
 def list_chapters(
@@ -71,13 +76,16 @@ def list_chapters(
     user: User = Depends(current_active_user)
 ):
     """List chapters for a specific comic."""
-    chapters = db.query(Chapter)\
-        .filter(Chapter.comic_id == comic_id)\
-        .order_by(Chapter.chapter_number)\
-        .offset(skip)\
-        .limit(limit)\
-        .all()
-    return chapters
+    try:
+        chapters = db.query(Chapter)\
+            .filter(Chapter.comic_id == comic_id)\
+            .order_by(Chapter.chapter_number)\
+            .offset(skip)\
+            .limit(limit)\
+            .all()
+        return chapters
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch chapters: {str(e)}")
 
 @router.put("/{chapter_id}", response_model=ChapterOut)
 def update_chapter(chapter_id: int, chapter_update: ChapterUpdate, db: Session = Depends(get_db), user: User = Depends(current_superuser)):
@@ -86,12 +94,16 @@ def update_chapter(chapter_id: int, chapter_update: ChapterUpdate, db: Session =
         raise HTTPException(status_code=404, detail="Chapter not found")
     
     try:
-        update_data = chapter_update.dict(exclude_unset=True)
+        update_data = chapter_update.model_dump(exclude_unset=True)
         
         # Check duplicate chapter number if updated
         if "chapter_number" in update_data and update_data["chapter_number"] != chapter.chapter_number:
             if db.query(Chapter).filter(Chapter.comic_id == chapter.comic_id, Chapter.chapter_number == update_data["chapter_number"]).first():
                 raise HTTPException(status_code=400, detail="Chapter number already exists for this comic.")
+
+        # Automatically set published_at if is_published becomes True
+        if update_data.get("is_published") and not update_data.get("published_at") and not chapter.published_at:
+            update_data["published_at"] = datetime.utcnow()
 
         for key, value in update_data.items():
             setattr(chapter, key, value)
@@ -149,7 +161,7 @@ async def upload_chapter_pdf(
         db.commit()
         db.refresh(chapter)
         
-        if old_pdf_url:
+        if old_pdf_url and old_pdf_url != pdf_url:
             try:
                 storage_client.delete_file(old_pdf_url)
             except:
@@ -161,6 +173,12 @@ async def upload_chapter_pdf(
         raise
     except Exception as e:
         db.rollback()
+        # Cleanup uploaded file if DB update fails
+        if 'pdf_url' in locals() and pdf_url:
+            try:
+                storage_client.delete_file(pdf_url)
+            except:
+                pass
         raise HTTPException(status_code=500, detail=f"Failed to upload PDF: {str(e)}")
 
 @router.post("/batch-delete", status_code=status.HTTP_204_NO_CONTENT)
