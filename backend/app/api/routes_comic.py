@@ -119,8 +119,27 @@ def list_comics(
         offset = (page - 1) * items_per_page
         comics = query.offset(offset).limit(items_per_page).all()
         
+        items = []
+        for comic in comics:
+            # comic.genres is already a list from JSONB column
+            genre_list = comic.genres if comic.genres else []
+            
+            items.append(ComicOut(
+                id=comic.id,
+                title=comic.title,
+                description=comic.description,
+                author=comic.author,
+                status=comic.status,
+                genres=genre_list,
+                cover_image_url=comic.cover_image_url,
+                created_at=comic.created_at,
+                updated_at=comic.updated_at,
+                published_at=comic.published_at,
+                chapters=[] # List view doesn't need chapters or expensive join
+            ))
+            
         return ComicListResponse(
-            items=comics,
+            items=items,
             total_comics=total_items,
             total_pages=total_pages,
             current_page=page,
