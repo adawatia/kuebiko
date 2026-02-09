@@ -1,33 +1,59 @@
 from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
-from typing import Optional, List
-from app.models import ComicGenre
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+from app.models import ComicStatus
+
+class ChapterBase(BaseModel):
+    chapter_number: float = Field(..., description="Chapter number (e.g. 1.0, 1.5)")
+    title: str = Field(..., description="Chapter title")
+    pdf_url: Optional[str] = Field(None, description="PDF file URL")
+    page_count: Optional[int] = Field(None, description="Number of pages")
+    is_published: bool = Field(False, description="Is chapter published")
+    published_at: Optional[datetime] = None
+
+class ChapterCreate(ChapterBase):
+    comic_id: int = Field(..., description="ID of the comic this chapter belongs to")
+    pass
+
+class ChapterUpdate(BaseModel):
+    chapter_number: Optional[float] = None
+    title: Optional[str] = None
+    pdf_url: Optional[str] = None
+    page_count: Optional[int] = None
+    is_published: Optional[bool] = None
+    published_at: Optional[datetime] = None
+
+class ChapterOut(ChapterBase):
+    id: int
+    comic_id: int
+    created_at: datetime
+    updated_at: datetime
+    
+    model_config = ConfigDict(from_attributes=True)
 
 class ComicBase(BaseModel):
     """Base comic schema with common fields"""
     title: str = Field(..., min_length=1, max_length=200, description="Comic title")
     description: str = Field(..., min_length=1, description="Comic description")
-    genres: List[ComicGenre] = Field(..., min_length=1, description="List of genres")
+    author: str = Field(..., min_length=1, description="Comic author")
+    status: ComicStatus = Field(ComicStatus.ONGOING, description="Publication status")
+    genres: List[str] = Field(..., description="List of genres")
 
 class ComicCreate(ComicBase):
     """
     Schema for creating a new comic.
-    
-    Example:
-    {
-        "title": "My Amazing Comic",
-        "description": "A thrilling adventure story",
-        "genres": ["Action", "Fantasy"],
-        "cover_image": "base64_encoded_string_here"
-    }
     """
-    cover_image: Optional[str] = Field(None, description="Base64 encoded cover image")
+    cover_image: Optional[str] = Field(None, description="Base64 encoded cover image") # For upload
+    cover_image_url: Optional[str] = Field(None, description="URL") # direct url
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "title": "My Amazing Comic",
                 "description": "A thrilling adventure story",
+                "author": "John Doe",
+                "status": "ongoing",
                 "genres": ["Action", "Fantasy"],
                 "cover_image": "data:image/png;base64,..."
             }
@@ -36,16 +62,22 @@ class ComicCreate(ComicBase):
 
 class ComicUpdate(BaseModel):
     """Schema for updating an existing comic"""
-    title: Optional[str] = Field(None, min_length=1, max_length=200, description="Comic title")
-    description: Optional[str] = Field(None, min_length=1, description="Comic description")
-    genres: Optional[List[ComicGenre]] = Field(None, min_length=1, description="List of genres")
-    cover_image: Optional[str] = Field(None, description="Base64 encoded cover image")
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    description: Optional[str] = Field(None, min_length=1)
+    author: Optional[str] = None
+    status: Optional[ComicStatus] = None
+    genres: Optional[List[str]] = None
+    cover_image: Optional[str] = None
+    cover_image_url: Optional[str] = None
 
 class ComicOut(ComicBase):
     """Schema for comic output"""
     id: int = Field(..., description="Comic ID")
-    pdf_url: Optional[str] = Field(None, description="Supabase URL for PDF file")
     cover_image_url: Optional[str] = Field(None, description="Supabase URL for cover image")
+    created_at: datetime
+    updated_at: datetime
+    published_at: Optional[datetime] = None
+    chapters: List[ChapterOut] = []
     
     model_config = ConfigDict(from_attributes=True)
 
