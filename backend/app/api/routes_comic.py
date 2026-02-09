@@ -254,15 +254,16 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
                 pass
         raise HTTPException(status_code=500, detail=f"Failed to update comic: {str(e)}")
 
-@router.post("/batch-delete", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/batch-delete", status_code=status.HTTP_200_OK)
 def bulk_delete_comics(comic_ids: List[int], db: Session = Depends(get_db), user: User = Depends(current_superuser)):
     """Delete multiple comics and their associated files from storage."""
     try:
         comics = db.query(Comic).filter(Comic.id.in_(comic_ids)).all()
         if not comics:
-            return
+            return {"message": "No comics found to delete", "deleted_count": 0}
 
         cover_urls = [c.cover_image_url for c in comics if c.cover_image_url]
+        deleted_count = len(comics)
         
         # Delete from DB
         db.query(Comic).filter(Comic.id.in_(comic_ids)).delete(synchronize_session=False)
@@ -280,11 +281,13 @@ def bulk_delete_comics(comic_ids: List[int], db: Session = Depends(get_db), user
                 storage_client.delete_comic_folder(comic_id)
             except Exception:
                 pass
+                
+        return {"message": f"Successfully deleted {deleted_count} comics", "deleted_count": deleted_count}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to batch delete comics: {str(e)}")
 
-@router.delete("/{comic_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{comic_id}", status_code=status.HTTP_200_OK)
 def delete_comic(comic_id: int, db: Session = Depends(get_db), user: User = Depends(current_superuser)):
     """Delete a comic and its associated files from storage."""
     comic = db.query(Comic).filter(Comic.id == comic_id).first()
@@ -308,7 +311,7 @@ def delete_comic(comic_id: int, db: Session = Depends(get_db), user: User = Depe
         except Exception:
             pass
         
-        return
+        return {"message": "Comic and associated files deleted successfully"}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to delete comic: {str(e)}")

@@ -181,15 +181,16 @@ async def upload_chapter_pdf(
                 pass
         raise HTTPException(status_code=500, detail=f"Failed to upload PDF: {str(e)}")
 
-@router.post("/batch-delete", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/batch-delete", status_code=status.HTTP_200_OK)
 def bulk_delete_chapters(chapter_ids: List[int], db: Session = Depends(get_db), user: User = Depends(current_superuser)):
     """Delete multiple chapters and their associated PDF files."""
     try:
         chapters = db.query(Chapter).filter(Chapter.id.in_(chapter_ids)).all()
         if not chapters:
-            return
+            return {"message": "No chapters found to delete", "deleted_count": 0}
 
         pdf_urls = [c.pdf_url for c in chapters if c.pdf_url]
+        deleted_count = len(chapters)
         
         # Delete from DB
         db.query(Chapter).filter(Chapter.id.in_(chapter_ids)).delete(synchronize_session=False)
@@ -200,12 +201,13 @@ def bulk_delete_chapters(chapter_ids: List[int], db: Session = Depends(get_db), 
                 storage_client.delete_file(pdf_url)
             except Exception:
                 pass
-
+                
+        return {"message": f"Successfully deleted {deleted_count} chapters", "deleted_count": deleted_count}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to batch delete chapters: {str(e)}")
 
-@router.delete("/{chapter_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{chapter_id}", status_code=status.HTTP_200_OK)
 def delete_chapter(chapter_id: int, db: Session = Depends(get_db), user: User = Depends(current_superuser)):
     chapter = db.query(Chapter).filter(Chapter.id == chapter_id).first()
     if not chapter:
@@ -221,7 +223,7 @@ def delete_chapter(chapter_id: int, db: Session = Depends(get_db), user: User = 
                 storage_client.delete_file(pdf_url)
             except:
                 pass
-        return
+        return {"message": "Chapter deleted successfully"}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to delete chapter: {str(e)}")
