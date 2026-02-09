@@ -130,27 +130,32 @@ const getImageUrl = (url: string | null) => {
         </div>
     </div>
 
-    <div v-if="loading" class="grid">
-        <div v-for="n in 8" :key="n" class="comic-card skeleton">
-            <div class="skeleton-image"></div>
-            <div class="card-content">
-                <div class="skeleton-header">
-                    <div class="skeleton-text title"></div>
-                    <div class="skeleton-text subtitle"></div>
+    <div v-if="loading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div v-for="n in 8" :key="n" class="bg-[var(--surface-highlight)] rounded-2xl overflow-hidden border border-[rgba(255,255,255,0.05)] animate-pulse">
+            <div class="h-[160px] w-full bg-gray-800"></div>
+            <div class="p-5 flex flex-col gap-4">
+                <div class="flex justify-between items-start">
+                    <div class="w-full">
+                        <div class="h-5 bg-gray-700 rounded w-3/4 mb-2"></div>
+                        <div class="flex gap-2">
+                            <div class="h-3 bg-gray-800 rounded w-1/3"></div>
+                            <div class="h-3 bg-gray-800 rounded w-10"></div>
+                        </div>
+                    </div>
                 </div>
-                <div class="skeleton-tags">
-                    <div class="skeleton-tag" style="width: 60px"></div>
-                    <div class="skeleton-tag" style="width: 80px"></div>
-                    <div class="skeleton-tag" style="width: 50px"></div>
+                <div class="flex gap-2 flex-wrap">
+                    <div class="h-5 bg-gray-700 rounded-full w-16"></div>
+                    <div class="h-5 bg-gray-700 rounded-full w-20"></div>
+                    <div class="h-5 bg-gray-700 rounded-full w-14"></div>
                 </div>
-                <div class="skeleton-description">
-                    <div class="skeleton-text line"></div>
-                    <div class="skeleton-text line"></div>
-                    <div class="skeleton-text line short"></div>
+                <div class="space-y-2">
+                    <div class="h-3 bg-gray-800 rounded w-full"></div>
+                    <div class="h-3 bg-gray-800 rounded w-full"></div>
+                    <div class="h-3 bg-gray-800 rounded w-2/3"></div>
                 </div>
-                <div class="actions btn-group">
-                    <div class="skeleton-btn"></div>
-                    <div class="skeleton-btn"></div>
+                <div class="flex gap-3 mt-auto pt-2">
+                    <div class="h-10 bg-gray-700 rounded-lg flex-1"></div>
+                    <div class="h-10 bg-gray-700 rounded-lg flex-1"></div>
                 </div>
             </div>
         </div>
@@ -771,46 +776,5 @@ h3 {
     color: #fa8;
 }
 
-/* Skeleton Loader */
-.skeleton {
-    pointer-events: none;
-}
-.skeleton-image {
-    height: 160px;
-    width: 100%;
-    background: rgba(255, 255, 255, 0.05);
-}
-.skeleton-text {
-    height: 1rem;
-    margin-bottom: 0.5rem;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 4px;
-}
-.skeleton-text.title { height: 1.4rem; width: 70%; margin-bottom: 1rem; }
-.skeleton-text.subtitle { width: 40%; margin-bottom: 1.5rem; }
-.skeleton-text.line { width: 100%; }
-.skeleton-text.line.short { width: 60%; }
-
-.skeleton-tags { display: flex; gap: 0.5rem; margin-bottom: 1.2rem; }
-.skeleton-tag { height: 20px; border-radius: 20px; background: rgba(255, 255, 255, 0.05); }
-
-.skeleton-btn { height: 40px; flex: 1; border-radius: 8px; background: rgba(255, 255, 255, 0.05); }
-
-/* Shimmer animation */
-@keyframes shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
-}
-
-.skeleton .skeleton-image, 
-.skeleton .skeleton-text, 
-.skeleton .skeleton-tag, 
-.skeleton .skeleton-btn {
-    background: linear-gradient(90deg, 
-        rgba(255, 255, 255, 0.03) 25%, 
-        rgba(255, 255, 255, 0.08) 50%, 
-        rgba(255, 255, 255, 0.03) 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-}
+/* removed custom skeleton css */
 </style>
