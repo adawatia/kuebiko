@@ -16,7 +16,7 @@ pip install -e .
 Make sure PostgreSQL is installed and running. Create a database:
 
 ```bash
-createdb comics
+createdb kuebiko_db
 ```
 
 ### 3. Environment Variables
@@ -30,7 +30,7 @@ cp .env.example .env
 Edit `.env` and update with your PostgreSQL credentials:
 
 ```
-DATABASE_URL=postgresql://your_user:your_password@localhost:5432/comics
+DATABASE_URL=postgresql://your_user:your_password@localhost:5432/kuebiko_db
 SECRET_KEY=your-secret-key
 ```
 

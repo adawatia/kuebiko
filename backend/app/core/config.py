@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Settings:
-    DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/comics")
+    DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/kuebiko_db")
     SECRET_KEY = os.getenv("SECRET_KEY", "SECRET")
     
     # Supabase Storage Configuration
