@@ -10,6 +10,9 @@ const comics = ref<Comic[]>([]);
 const search = ref('');
 const page = ref(1);
 const totalPages = ref(1);
+const totalComics = ref(0);
+const hasNextPage = ref(false);
+const hasPrevPage = ref(false);
 const loading = ref(false);
 const selectedComics = reactive(new Set<number>());
 
@@ -28,6 +31,9 @@ const fetchComics = async () => {
 
         comics.value = response.items;
         totalPages.value = response.total_pages;
+        totalComics.value = response.total_comics;
+        hasNextPage.value = response.next_page_available;
+        hasPrevPage.value = response.prev_page_available;
     } catch (e) {
         console.error(e);
         // If error occurs, maybe reset to page 1 if safe?
@@ -124,7 +130,31 @@ const getImageUrl = (url: string | null) => {
         </div>
     </div>
 
-    <div v-if="loading" class="loading">Loading...</div>
+    <div v-if="loading" class="grid">
+        <div v-for="n in 8" :key="n" class="comic-card skeleton">
+            <div class="skeleton-image"></div>
+            <div class="card-content">
+                <div class="skeleton-header">
+                    <div class="skeleton-text title"></div>
+                    <div class="skeleton-text subtitle"></div>
+                </div>
+                <div class="skeleton-tags">
+                    <div class="skeleton-tag" style="width: 60px"></div>
+                    <div class="skeleton-tag" style="width: 80px"></div>
+                    <div class="skeleton-tag" style="width: 50px"></div>
+                </div>
+                <div class="skeleton-description">
+                    <div class="skeleton-text line"></div>
+                    <div class="skeleton-text line"></div>
+                    <div class="skeleton-text line short"></div>
+                </div>
+                <div class="actions btn-group">
+                    <div class="skeleton-btn"></div>
+                    <div class="skeleton-btn"></div>
+                </div>
+            </div>
+        </div>
+    </div>
     
     <div v-else>
         <div v-if="isSuperuser" class="admin-toolbar">
@@ -144,6 +174,10 @@ const getImageUrl = (url: string | null) => {
             <div class="selection-info" v-if="selectedComics.size > 0">
                 <a href="#" @click.prevent="selectedComics.clear()">Clear Selection</a>
             </div>
+        </div>
+
+        <div class="results-info" v-if="totalComics > 0">
+            Showing {{ comics.length }} of {{ totalComics }} comics
         </div>
 
         <div class="grid">
@@ -195,9 +229,19 @@ const getImageUrl = (url: string | null) => {
     </div>
 
     <div class="pagination" v-if="totalPages > 1">
-        <button :disabled="page <= 1" @click="page--">Previous</button>
-        <span>Page {{ page }} of {{ totalPages }}</span>
-        <button :disabled="page >= totalPages" @click="page++">Next</button>
+        <button :disabled="!hasPrevPage" @click="page--">
+            <span class="desktop-only">Previous</span>
+            <span class="mobile-only">&larr;</span>
+        </button>
+        <div class="page-info">
+            <span class="current">Page {{ page }}</span>
+            <span class="sep">/</span>
+            <span class="total">{{ totalPages }}</span>
+        </div>
+        <button :disabled="!hasNextPage" @click="page++">
+            <span class="desktop-only">Next</span>
+            <span class="mobile-only">&rarr;</span>
+        </button>
     </div>
   </div>
 </template>
@@ -293,8 +337,8 @@ const getImageUrl = (url: string | null) => {
 /* Grid Layout */
 .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 2rem;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1.5rem;
 }
 
 /* Comic Card */
@@ -323,10 +367,7 @@ const getImageUrl = (url: string | null) => {
 }
 
 .card-content {
-    padding: 1.8rem;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
+    padding: 1.2rem;
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -334,7 +375,7 @@ const getImageUrl = (url: string | null) => {
 }
 
 .card-image {
-    height: 200px;
+    height: 160px;
     width: 100%;
     position: relative;
     overflow: hidden;
@@ -371,7 +412,7 @@ const getImageUrl = (url: string | null) => {
 
 h3 {
     margin: 0;
-    font-size: 1.4rem;
+    font-size: 1.1rem;
     font-weight: 700;
     line-height: 1.3;
 }
@@ -399,9 +440,9 @@ h3 {
 /* Description */
 .description {
     color: var(--text-muted);
-    font-size: 0.95rem;
-    line-height: 1.6;
-    margin-bottom: 1.8rem;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    margin-bottom: 1.2rem;
     display: -webkit-box;
     -webkit-line-clamp: 3;
     line-clamp: 3;
@@ -486,6 +527,45 @@ h3 {
     background: rgba(255, 255, 255, 0.05);
 }
 
+/* Results Info */
+.results-info {
+    color: var(--text-muted);
+    margin-bottom: 2rem;
+    font-size: 0.95rem;
+    padding: 0 0.5rem;
+    border-left: 3px solid var(--primary);
+    padding-left: 1rem;
+}
+
+/* Pagination Info */
+.page-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+}
+
+.page-info .current {
+    color: white;
+}
+
+.page-info .sep {
+    color: rgba(255, 255, 255, 0.3);
+}
+
+.page-info .total {
+    color: var(--text-muted);
+}
+
+/* Responsive Utilities */
+.desktop-only {
+    display: inline;
+}
+
+.mobile-only {
+    display: none;
+}
+
 /* Custom Checkboxes */
 .checkbox-wrapper {
     position: relative;
@@ -495,11 +575,11 @@ h3 {
 .checkbox-wrapper input[type="checkbox"] {
     -webkit-appearance: none;
     appearance: none;
-    width: 24px;
-    height: 24px;
+    width: 18px;
+    height: 18px;
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 6px;
+    border-radius: 4px;
     cursor: pointer;
     position: relative;
     transition: all 0.2s ease;
@@ -514,7 +594,7 @@ h3 {
     content: '✔';
     position: absolute;
     color: #000;
-    font-size: 14px;
+    font-size: 12px;
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
@@ -551,6 +631,13 @@ h3 {
 }
 
 @media (max-width: 768px) {
+    .desktop-only {
+        display: none;
+    }
+    .mobile-only {
+        display: inline;
+    }
+
     .home-container {
         padding-bottom: 6rem;
         padding-left: 1rem;
@@ -682,5 +769,48 @@ h3 {
 .card-status.hiatus {
     background: rgba(255, 150, 100, 0.15);
     color: #fa8;
+}
+
+/* Skeleton Loader */
+.skeleton {
+    pointer-events: none;
+}
+.skeleton-image {
+    height: 160px;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.05);
+}
+.skeleton-text {
+    height: 1rem;
+    margin-bottom: 0.5rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+}
+.skeleton-text.title { height: 1.4rem; width: 70%; margin-bottom: 1rem; }
+.skeleton-text.subtitle { width: 40%; margin-bottom: 1.5rem; }
+.skeleton-text.line { width: 100%; }
+.skeleton-text.line.short { width: 60%; }
+
+.skeleton-tags { display: flex; gap: 0.5rem; margin-bottom: 1.2rem; }
+.skeleton-tag { height: 20px; border-radius: 20px; background: rgba(255, 255, 255, 0.05); }
+
+.skeleton-btn { height: 40px; flex: 1; border-radius: 8px; background: rgba(255, 255, 255, 0.05); }
+
+/* Shimmer animation */
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+.skeleton .skeleton-image, 
+.skeleton .skeleton-text, 
+.skeleton .skeleton-tag, 
+.skeleton .skeleton-btn {
+    background: linear-gradient(90deg, 
+        rgba(255, 255, 255, 0.03) 25%, 
+        rgba(255, 255, 255, 0.08) 50%, 
+        rgba(255, 255, 255, 0.03) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
 }
 </style>
