@@ -6,6 +6,7 @@ from app.schemas import ChapterCreate, ChapterUpdate, ChapterOut
 from app.storage import storage_client
 from app.users import current_active_user, current_superuser
 from typing import List
+from datetime import datetime
 
 router = APIRouter(prefix="/chapters", tags=["chapters"])
 
@@ -31,6 +32,11 @@ def create_chapter(
     if db.query(Chapter).filter(Chapter.comic_id == chapter.comic_id, Chapter.chapter_number == chapter.chapter_number).first():
         raise HTTPException(status_code=400, detail="Chapter number already exists for this comic.")
 
+    # Automatically set published_at if is_published is True
+    published_at = chapter.published_at
+    if chapter.is_published and not published_at:
+        published_at = datetime.utcnow()
+
     try:
         chapter_db = Chapter(
             comic_id=chapter.comic_id,
@@ -39,7 +45,7 @@ def create_chapter(
             pdf_url="", # Upload separately
             page_count=chapter.page_count,
             is_published=chapter.is_published,
-            published_at=chapter.published_at
+            published_at=published_at
         )
         db.add(chapter_db)
         db.commit()
@@ -156,6 +162,30 @@ async def upload_chapter_pdf(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to upload PDF: {str(e)}")
+
+@router.post("/batch-delete", status_code=status.HTTP_204_NO_CONTENT)
+def bulk_delete_chapters(chapter_ids: List[int], db: Session = Depends(get_db), user: User = Depends(current_superuser)):
+    """Delete multiple chapters and their associated PDF files."""
+    try:
+        chapters = db.query(Chapter).filter(Chapter.id.in_(chapter_ids)).all()
+        if not chapters:
+            return
+
+        pdf_urls = [c.pdf_url for c in chapters if c.pdf_url]
+        
+        # Delete from DB
+        db.query(Chapter).filter(Chapter.id.in_(chapter_ids)).delete(synchronize_session=False)
+        db.commit()
+        
+        for pdf_url in pdf_urls:
+            try:
+                storage_client.delete_file(pdf_url)
+            except Exception:
+                pass
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to batch delete chapters: {str(e)}")
 
 @router.delete("/{chapter_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_chapter(chapter_id: int, db: Session = Depends(get_db), user: User = Depends(current_superuser)):
