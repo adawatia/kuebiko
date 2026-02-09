@@ -255,8 +255,14 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
         raise HTTPException(status_code=500, detail=f"Failed to update comic: {str(e)}")
 
 @router.post("/batch-delete", status_code=status.HTTP_200_OK)
-def bulk_delete_comics(comic_ids: List[int], db: Session = Depends(get_db), user: User = Depends(current_superuser)):
-    """Delete multiple comics and their associated files from storage."""
+def batch_delete_comics(comic_ids: List[int], db: Session = Depends(get_db), user: User = Depends(current_superuser)):
+    """Batch delete comics by IDs."""
+    if not comic_ids:
+        raise HTTPException(status_code=400, detail="No comic IDs provided")
+    
+    if len(comic_ids) > 100:
+        raise HTTPException(status_code=400, detail="Cannot delete more than 100 comics at once")
+    
     try:
         comics = db.query(Comic).filter(Comic.id.in_(comic_ids)).all()
         if not comics:
@@ -264,6 +270,7 @@ def bulk_delete_comics(comic_ids: List[int], db: Session = Depends(get_db), user
 
         cover_urls = [c.cover_image_url for c in comics if c.cover_image_url]
         deleted_count = len(comics)
+        deleted_ids = [c.id for c in comics]
         
         # Delete from DB
         db.query(Comic).filter(Comic.id.in_(comic_ids)).delete(synchronize_session=False)
@@ -276,13 +283,13 @@ def bulk_delete_comics(comic_ids: List[int], db: Session = Depends(get_db), user
                 pass
 
         # Cleanup folders to remove hierarchy
-        for comic_id in comic_ids:
+        for comic_id in deleted_ids:
             try:
                 storage_client.delete_comic_folder(comic_id)
             except Exception:
                 pass
                 
-        return {"message": f"Successfully deleted {deleted_count} comics", "deleted_count": deleted_count}
+        return {"message": f"Successfully deleted {deleted_count} comic{'s' if deleted_count > 1 else ''}", "deleted_count": deleted_count}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to batch delete comics: {str(e)}")

@@ -101,6 +101,16 @@ class ComicListResponse(BaseModel):
     next_page_available: bool = Field(..., description="True if there is a next page")
     prev_page_available: bool = Field(..., description="True if there is a previous page")
 
+class ChapterListResponse(BaseModel):
+    """Paginated response for chapter list"""
+    items: List[ChapterOut]
+    total_chapters: int = Field(..., description="Total number of chapters available")
+    total_pages: int = Field(..., description="Total number of pages")
+    current_page: int = Field(..., description="Current page number")
+    items_per_page: int = Field(..., description="Number of items per page")
+    next_page_available: bool = Field(..., description="True if there is a next page")
+    prev_page_available: bool = Field(..., description="True if there is a previous page")
+
 from fastapi_users import schemas
 
 class UserRead(schemas.BaseUser[int]):

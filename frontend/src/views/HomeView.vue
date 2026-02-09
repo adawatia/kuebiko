@@ -14,10 +14,15 @@ const totalComics = ref(0);
 const hasNextPage = ref(false);
 const hasPrevPage = ref(false);
 const loading = ref(false);
+const error = ref<string | null>(null);
+const deleting = ref(false);
 const selectedComics = reactive(new Set<number>());
+
+let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 const fetchComics = async () => {
     loading.value = true;
+    error.value = null;
     selectedComics.clear(); // Clear selection on navigate/refresh
     try {
         const response: ComicListResponse = await getComics(page.value, 12, search.value);
@@ -34,9 +39,10 @@ const fetchComics = async () => {
         totalComics.value = response.total_comics;
         hasNextPage.value = response.next_page_available;
         hasPrevPage.value = response.prev_page_available;
-    } catch (e) {
-        console.error(e);
-        // If error occurs, maybe reset to page 1 if safe?
+    } catch (e: any) {
+        console.error('Failed to fetch comics:', e);
+        error.value = e.response?.data?.detail || 'Failed to load comics. Please try again.';
+        comics.value = [];
     } finally {
         loading.value = false;
     }
@@ -70,21 +76,41 @@ const toggleSelectAll = () => {
 const handleBulkDelete = async () => {
     if (selectedComics.size === 0) return;
     
-    if (confirm(`Are you sure you want to delete ${selectedComics.size} comics?`)) {
+    if (confirm(`Are you sure you want to delete ${selectedComics.size} comic${selectedComics.size > 1 ? 's' : ''}? This action cannot be undone.`)) {
+        deleting.value = true;
+        error.value = null;
         try {
             await bulkDeleteComics(Array.from(selectedComics));
             selectedComics.clear();
-            fetchComics(); // Refresh list
-        } catch (e) {
-            alert("Failed to delete comics.");
-            console.error(e);
+            await fetchComics(); // Refresh list
+        } catch (e: any) {
+            console.error('Failed to delete comics:', e);
+            error.value = e.response?.data?.detail || 'Failed to delete comics. Please try again.';
+        } finally {
+            deleting.value = false;
         }
     }
 };
 
-// Debounce search could be added here
-watch([page, search], () => {
+// Watch page changes
+watch(page, () => {
     fetchComics();
+});
+
+// Debounced search - reset to page 1 when search changes
+watch(search, (newSearch, oldSearch) => {
+    if (searchTimeout) {
+        clearTimeout(searchTimeout);
+    }
+    
+    searchTimeout = setTimeout(() => {
+        // Reset to page 1 when search changes
+        if (page.value !== 1) {
+            page.value = 1;
+        } else {
+            fetchComics();
+        }
+    }, 300); // 300ms debounce
 });
 
 onMounted(() => {
@@ -162,30 +188,52 @@ const getImageUrl = (url: string | null) => {
     </div>
     
     <div v-else>
+        <!-- Error Message -->
+        <div v-if="error" class="error-message">
+            <span>⚠️ {{ error }}</span>
+            <button @click="fetchComics" class="btn btn-secondary">Retry</button>
+        </div>
+
         <div v-if="isSuperuser" class="admin-toolbar">
             <div class="checkbox-wrapper select-all">
                 <label>
                     <input type="checkbox" 
                         :checked="comics.length > 0 && comics.every(c => selectedComics.has(c.id))"
                         @change="toggleSelectAll"
+                        :disabled="comics.length === 0"
                     />
                     Select All
                 </label>
             </div>
 
-            <button v-if="selectedComics.size > 0" @click="handleBulkDelete" class="btn btn-danger">
-                Delete Selected ({{ selectedComics.size }})
+            <button 
+                v-if="selectedComics.size > 0" 
+                @click="handleBulkDelete" 
+                class="btn btn-danger"
+                :disabled="deleting"
+            >
+                {{ deleting ? 'Deleting...' : `Delete Selected (${selectedComics.size})` }}
             </button>
             <div class="selection-info" v-if="selectedComics.size > 0">
                 <a href="#" @click.prevent="selectedComics.clear()">Clear Selection</a>
             </div>
         </div>
 
-        <div class="results-info" v-if="totalComics > 0">
+        <div class="results-info" v-if="totalComics > 0 && !error">
             Showing {{ comics.length }} of {{ totalComics }} comics
         </div>
 
-        <div class="grid">
+        <!-- Empty State -->
+        <div v-if="comics.length === 0 && !error && !loading" class="empty-state">
+            <div class="empty-icon">📚</div>
+            <h3>{{ search ? 'No comics found' : 'No comics yet' }}</h3>
+            <p>{{ search ? 'Try adjusting your search terms' : 'Start by creating your first comic!' }}</p>
+            <RouterLink v-if="isSuperuser && !search" to="/create" class="btn btn-primary">
+                Create Comic
+            </RouterLink>
+        </div>
+
+        <div class="grid" v-if="comics.length > 0">
             <div 
                 v-for="comic in comics" 
                 :key="comic.id" 
@@ -774,6 +822,60 @@ h3 {
 .card-status.hiatus {
     background: rgba(255, 150, 100, 0.15);
     color: #fa8;
+}
+
+/* Error Message */
+.error-message {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    animation: slideDown 0.3s ease-out;
+}
+
+.error-message span {
+    color: #fca5a5;
+    font-weight: 500;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-muted);
+}
+
+.empty-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.empty-state h3 {
+    font-size: 1.5rem;
+    color: var(--text);
+    margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+    margin-bottom: 2rem;
+    font-size: 1rem;
 }
 
 /* removed custom skeleton css */
