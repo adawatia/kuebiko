@@ -4,7 +4,7 @@ from sqlalchemy import or_
 from app.db import SessionLocal
 from app.models import Comic, ComicStatus
 from app.schemas import ComicCreate, ComicUpdate, ComicOut, ComicListResponse
-from app.storage import supabase_storage
+from app.storage import storage_client
 from typing import List, Optional
 import math
 
@@ -47,7 +47,7 @@ def create_comic(
 
         cover_url = None
         if comic.cover_image:
-            cover_url = supabase_storage.upload_base64_image(
+            cover_url = storage_client.upload_base64_image(
                 comic.cover_image,
                 comic.title,
                 comic_id=comic_db.id
@@ -62,15 +62,15 @@ def create_comic(
         db.rollback()
         if 'cover_url' in locals() and cover_url:
             try:
-                supabase_storage.delete_file(cover_url)
+                storage_client.delete_file(cover_url)
             except:
                 pass
         raise
     except Exception as e:
-        # Cleanup image from Supabase if DB fails
+        # Cleanup image from storage if DB fails
         if 'cover_url' in locals() and cover_url:
             try:
-                supabase_storage.delete_file(cover_url)
+                storage_client.delete_file(cover_url)
             except:
                 pass
         db.rollback()
@@ -188,8 +188,8 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
             if cover_image_b64:
                 # Use new title if being updated, otherwise use current title
                 title_for_storage = new_title if new_title else comic.title
-                # Save new image to Supabase (stable folder by ID)
-                new_cover_url = supabase_storage.upload_base64_image(
+                # Save new image to storage (stable folder by ID)
+                new_cover_url = storage_client.upload_base64_image(
                     cover_image_b64,
                     title_for_storage,
                     comic_id=comic.id
@@ -214,10 +214,10 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
         db.commit()
         db.refresh(comic)
         
-        # Cleanup old image from Supabase after successful commit
+        # Cleanup old image from storage after successful commit
         if old_cover_url:
             try:
-                supabase_storage.delete_file(old_cover_url)
+                storage_client.delete_file(old_cover_url)
             except:
                 pass
                 
@@ -226,7 +226,7 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
         # Cleanup new file if it was created but operation failed
         if 'new_cover_url' in locals() and new_cover_url:
             try:
-                supabase_storage.delete_file(new_cover_url)
+                storage_client.delete_file(new_cover_url)
             except:
                 pass
         raise
@@ -235,14 +235,14 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
         db.rollback()
         if 'new_cover_url' in locals() and new_cover_url:
             try:
-                supabase_storage.delete_file(new_cover_url)
+                storage_client.delete_file(new_cover_url)
             except:
                 pass
         raise HTTPException(status_code=500, detail=f"Failed to update comic: {str(e)}")
 
 @router.post("/batch-delete", status_code=status.HTTP_204_NO_CONTENT)
 def bulk_delete_comics(comic_ids: List[int], db: Session = Depends(get_db), user: User = Depends(current_superuser)):
-    """Delete multiple comics and their associated files from Supabase."""
+    """Delete multiple comics and their associated files from storage."""
     try:
         comics = db.query(Comic).filter(Comic.id.in_(comic_ids)).all()
         if not comics:
@@ -256,14 +256,14 @@ def bulk_delete_comics(comic_ids: List[int], db: Session = Depends(get_db), user
         
         for cover_url in cover_urls:
             try:
-                supabase_storage.delete_file(cover_url)
+                storage_client.delete_file(cover_url)
             except Exception:
                 pass
 
         # Cleanup folders to remove hierarchy
         for comic_id in comic_ids:
             try:
-                supabase_storage.delete_comic_folder(comic_id)
+                storage_client.delete_comic_folder(comic_id)
             except Exception:
                 pass
     except Exception as e:
@@ -272,7 +272,7 @@ def bulk_delete_comics(comic_ids: List[int], db: Session = Depends(get_db), user
 
 @router.delete("/{comic_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_comic(comic_id: int, db: Session = Depends(get_db), user: User = Depends(current_superuser)):
-    """Delete a comic and its associated files from Supabase."""
+    """Delete a comic and its associated files from storage."""
     comic = db.query(Comic).filter(Comic.id == comic_id).first()
     if not comic:
         raise HTTPException(status_code=404, detail="Comic not found")
@@ -284,13 +284,13 @@ def delete_comic(comic_id: int, db: Session = Depends(get_db), user: User = Depe
         
         if cover_url:
             try:
-                supabase_storage.delete_file(cover_url)
+                storage_client.delete_file(cover_url)
             except Exception:
                 pass
 
         # Remove any remaining objects in the comic folder
         try:
-            supabase_storage.delete_comic_folder(comic_id)
+            storage_client.delete_comic_folder(comic_id)
         except Exception:
             pass
         

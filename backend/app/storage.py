@@ -135,6 +135,4 @@ class LocalStorage:
             return False
 
 # Create a singleton instance
-# Named 'supabase_storage' to minimize refactoring in other files, 
-# but it is actually local storage. Valid approach for now.
-supabase_storage = LocalStorage()
+storage_client = LocalStorage()

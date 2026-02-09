@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.db import SessionLocal
 from app.models import Chapter, Comic, User
 from app.schemas import ChapterCreate, ChapterUpdate, ChapterOut
-from app.storage import supabase_storage
+from app.storage import storage_client
 from app.users import current_active_user, current_superuser
 from typing import List
 
@@ -109,12 +109,10 @@ async def upload_chapter_pdf(
         if not contents.lstrip().startswith(b'%PDF'):
             raise HTTPException(status_code=400, detail="File is not a valid PDF.")
 
-        # Upload to Supabase
+        # Upload to storage
         filename = f"{chapter_id}_{pdf.filename}"
-        title_slug = f"chapter_{chapter.chapter_number}"
-        # We need comic title maybe? Or just use ID structure.
-        # supabase_storage.upload_pdf argument signature: (file_bytes, comic_title, filename, comic_id)
-        # We need comic to get title if we want to follow existing pattern.
+        
+        # We need comic to get title if we want to follow existing pattern, but primary org is now ID-based.
         comic = db.query(Comic).filter(Comic.id == chapter.comic_id).first()
         if not comic:
             # Should not happen due to FK
@@ -122,7 +120,7 @@ async def upload_chapter_pdf(
 
         old_pdf_url = chapter.pdf_url
         
-        pdf_url = supabase_storage.upload_pdf(contents, comic.title, filename, comic_id=comic.id)
+        pdf_url = storage_client.upload_pdf(contents, comic.title, filename, comic_id=comic.id)
         
         chapter.pdf_url = pdf_url
         db.commit()
@@ -130,7 +128,7 @@ async def upload_chapter_pdf(
         
         if old_pdf_url:
             try:
-                supabase_storage.delete_file(old_pdf_url)
+                storage_client.delete_file(old_pdf_url)
             except:
                 pass
                 
@@ -155,7 +153,7 @@ def delete_chapter(chapter_id: int, db: Session = Depends(get_db), user: User = 
         
         if pdf_url:
             try:
-                supabase_storage.delete_file(pdf_url)
+                storage_client.delete_file(pdf_url)
             except:
                 pass
         return

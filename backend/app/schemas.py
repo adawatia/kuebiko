@@ -73,7 +73,7 @@ class ComicUpdate(BaseModel):
 class ComicOut(ComicBase):
     """Schema for comic output"""
     id: int = Field(..., description="Comic ID")
-    cover_image_url: Optional[str] = Field(None, description="Supabase URL for cover image")
+    cover_image_url: Optional[str] = Field(None, description="Storage URL for cover image")
     created_at: datetime
     updated_at: datetime
     published_at: Optional[datetime] = None
