@@ -56,6 +56,23 @@ def get_chapter(chapter_id: int, db: Session = Depends(get_db), user: User = Dep
         raise HTTPException(status_code=404, detail="Chapter not found")
     return chapter
 
+@router.get("/", response_model=List[ChapterOut])
+def list_chapters(
+    comic_id: int = Query(..., description="Filter by comic ID"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_active_user)
+):
+    """List chapters for a specific comic."""
+    chapters = db.query(Chapter)\
+        .filter(Chapter.comic_id == comic_id)\
+        .order_by(Chapter.chapter_number)\
+        .offset(skip)\
+        .limit(limit)\
+        .all()
+    return chapters
+
 @router.put("/{chapter_id}", response_model=ChapterOut)
 def update_chapter(chapter_id: int, chapter_update: ChapterUpdate, db: Session = Depends(get_db), user: User = Depends(current_superuser)):
     chapter = db.query(Chapter).filter(Chapter.id == chapter_id).first()

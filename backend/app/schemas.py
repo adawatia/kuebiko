@@ -7,19 +7,28 @@ from app.models import ComicStatus
 class ChapterBase(BaseModel):
     chapter_number: float = Field(..., description="Chapter number (e.g. 1.0, 1.5)")
     title: str = Field(..., description="Chapter title")
-    pdf_url: Optional[str] = Field(None, description="PDF file URL")
     page_count: Optional[int] = Field(None, description="Number of pages")
     is_published: bool = Field(False, description="Is chapter published")
     published_at: Optional[datetime] = None
 
 class ChapterCreate(ChapterBase):
     comic_id: int = Field(..., description="ID of the comic this chapter belongs to")
-    pass
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "comic_id": 1,
+                "chapter_number": 1.0,
+                "title": "The Beginning",
+                "page_count": 20,
+                "is_published": True
+            }
+        }
+    )
 
 class ChapterUpdate(BaseModel):
     chapter_number: Optional[float] = None
     title: Optional[str] = None
-    pdf_url: Optional[str] = None
     page_count: Optional[int] = None
     is_published: Optional[bool] = None
     published_at: Optional[datetime] = None
@@ -27,6 +36,7 @@ class ChapterUpdate(BaseModel):
 class ChapterOut(ChapterBase):
     id: int
     comic_id: int
+    pdf_url: Optional[str] = Field(None, description="PDF file URL")
     created_at: datetime
     updated_at: datetime
     

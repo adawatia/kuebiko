@@ -25,7 +25,7 @@ class Comic(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
     published_at = Column(DateTime(timezone=True), nullable=True)
 
-    chapters = relationship("Chapter", back_populates="comic", cascade="all, delete-orphan")
+    chapters = relationship("Chapter", back_populates="comic", cascade="all, delete-orphan", order_by="Chapter.chapter_number")
 
 class Chapter(Base):
     __tablename__ = "chapters"

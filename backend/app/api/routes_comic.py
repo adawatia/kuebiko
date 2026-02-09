@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
 from app.db import SessionLocal
 from app.models import Comic, ComicStatus
@@ -152,7 +152,7 @@ def list_comics(
 
 @router.get("/{comic_id}", response_model=ComicOut)
 def get_comic(comic_id: int, db: Session = Depends(get_db), user: User = Depends(current_active_user)):
-    comic = db.query(Comic).filter(Comic.id == comic_id).first()
+    comic = db.query(Comic).options(joinedload(Comic.chapters)).filter(Comic.id == comic_id).first()
     if not comic:
         raise HTTPException(status_code=404, detail="Comic not found")
     return comic
