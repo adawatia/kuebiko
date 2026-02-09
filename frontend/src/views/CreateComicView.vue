@@ -8,8 +8,15 @@ const router = useRouter();
 const { isSuperuser, state } = useAuth();
 const title = ref('');
 const description = ref('');
+const author = ref('');
+const status = ref('ongoing');
+const statusOptions = [
+    { value: 'ongoing', label: 'Ongoing' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'hiatus', label: 'Hiatus' }
+];
 const availableGenres = [
-    'Action', 'Adventure', 'Fantasy', 'Horror', 'Romance', 'Sci-Fi', 'Mystery', 'Other'
+    'Action', 'Adventure', 'Fantasy', 'Horror', 'Romance', 'Sci-Fi', 'Mystery', 'Slice of Life', 'Other'
 ];
 const selectedGenres = ref<string[]>([]);
 const coverImage = ref<string | null>(null);
@@ -70,6 +77,11 @@ const handleSubmit = async () => {
         return;
     }
 
+    if (!author.value || !author.value.trim()) {
+        alert('Please enter an author');
+        return;
+    }
+
     if (selectedGenres.value.length === 0) {
         alert('Please select at least one genre');
         return;
@@ -83,6 +95,8 @@ const handleSubmit = async () => {
         const comic = await createComic({
             title: title.value.trim(),
             description: description.value.trim(),
+            author: author.value.trim(),
+            status: status.value,
             genres: selectedGenres.value,
             cover_image: coverImage.value
         });
@@ -123,6 +137,20 @@ const handleSubmit = async () => {
         <div class="form-group">
             <label>Title</label>
             <input type="text" v-model="title" required />
+        </div>
+
+        <div class="form-group">
+            <label>Author</label>
+            <input type="text" v-model="author" required />
+        </div>
+
+        <div class="form-group">
+            <label>Status</label>
+            <select v-model="status" required class="select-input">
+                <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
+                    {{ opt.label }}
+                </option>
+            </select>
         </div>
 
         <div class="form-group">
@@ -345,5 +373,22 @@ label {
         font-size: 0.85rem;
         padding: 0.6rem;
     }
+}
+
+.select-input {
+    width: 100%;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    color: #fff;
+    font-size: 1rem;
+    outline: none;
+    transition: all 0.2s;
+}
+
+.select-input:focus {
+    border-color: var(--primary);
+    background: rgba(255, 255, 255, 0.08);
 }
 </style>

@@ -2,7 +2,8 @@
 import { ref, onMounted, computed, onUnmounted, watch, nextTick, shallowRef } from 'vue';
 import { BookOpen, Image as ImageIcon, FileText, Trash2, X, AlertCircle, Book, Loader2, ArrowUpDown, ChevronLeft, ChevronRight, Plus, Minus, Minimize, Maximize } from 'lucide-vue-next';
 import { useRoute, useRouter } from 'vue-router';
-import { getComic, deleteComic, uploadComicPdf, updateComic, type Comic } from '../api/comics';
+import { getComic, deleteComic, updateComic, type Comic } from '../api/comics';
+import { createChapter, uploadChapterPdf, deleteChapter, type Chapter } from '../api/chapters';
 import apiClient, { API_URL } from '../api/client';
 import VuePdfEmbed from 'vue-pdf-embed';
 import { useAuth } from '../store';
@@ -220,21 +221,16 @@ const closeReader = () => {
     }
 };
 
-const handleReadOnline = () => {
+const handleReadChapter = (chapter: Chapter) => {
     try {
-        if (!comic.value?.pdf_url) {
-            alert('No PDF available for this comic.');
-            return;
-        }
-        
-        if (!comic.value.pdf_url.startsWith('http')) {
-            alert('Invalid PDF URL.');
+        if (!chapter.pdf_url) {
+            alert('No PDF available for this chapter.');
             return;
         }
         
         // Use the Supabase URL directly
         pdfSource.value = {
-            url: comic.value.pdf_url,
+            url: chapter.pdf_url,
             withCredentials: false
         };
 
@@ -250,6 +246,74 @@ const handleReadOnline = () => {
     } catch (e) {
         console.error('Error opening PDF reader:', e);
         alert('Failed to open PDF reader.');
+    }
+};
+
+const newChapterNumber = ref<number | null>(null);
+const newChapterTitle = ref('');
+const creatingChapter = ref(false);
+
+const handleCreateChapter = async () => {
+    if (!newChapterNumber.value || !newChapterTitle.value) {
+        alert("Please enter chapter number and title.");
+        return;
+    }
+    
+    creatingChapter.value = true;
+    try {
+        await createChapter({
+            comic_id: comicId,
+            chapter_number: newChapterNumber.value,
+            title: newChapterTitle.value,
+            page_count: 0,
+            is_published: true
+        });
+        await fetchComic();
+        newChapterNumber.value = null;
+        newChapterTitle.value = '';
+        alert("Chapter created successfully!");
+    } catch (e: any) {
+        console.error(e);
+        alert(e.response?.data?.detail || "Failed to create chapter");
+    } finally {
+        creatingChapter.value = false;
+    }
+};
+
+const handleDeleteChapter = async (chapterId: number) => {
+    if (confirm("Are you sure you want to delete this chapter?")) {
+        try {
+            await deleteChapter(chapterId);
+            await fetchComic();
+        } catch (e) {
+            alert("Failed to delete chapter");
+        }
+    }
+};
+
+const handleChapterPdfUpload = async (chapterId: number, event: Event) => {
+    const target = event.target as HTMLInputElement;
+    if (target.files && target.files.length > 0) {
+        const file = target.files[0];
+        if (!file) return;
+        
+        if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+            alert('Please upload a PDF file.');
+            return;
+        }
+        
+        uploading.value = true;
+        try {
+            await uploadChapterPdf(chapterId, file);
+            await fetchComic();
+            alert('PDF uploaded successfully!');
+        } catch (e: any) {
+             const errorMsg = e?.response?.data?.detail || 'Failed to upload PDF';
+             alert(errorMsg);
+        } finally {
+            uploading.value = false;
+            target.value = '';
+        }
     }
 };
 
@@ -311,10 +375,18 @@ onMounted(async () => {
     const shouldRead = route.query.read === 'true';
     await fetchComic();
     
-    if (shouldRead && comic.value?.pdf_url) {
-        handleReadOnline();
+    // Auto-open first chapter if requested
+    const firstChapter = comic.value?.chapters?.[0];
+    if (shouldRead && firstChapter && firstChapter.pdf_url) {
+        handleReadChapter(firstChapter);
     }
 });
+
+const openFirstChapter = () => {
+    if (comic.value?.chapters?.[0]) {
+        handleReadChapter(comic.value.chapters[0]);
+    }
+};
 
 onUnmounted(() => {
     window.removeEventListener('resize', updateWindowWidth);
@@ -336,66 +408,7 @@ const handleDelete = async () => {
     }
 };
 
-const getPdfBlob = async () => {
-    try {
-        const response = await apiClient.get(`/comics/${comicId}/pdf`, { responseType: 'blob' });
-        return window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
-    } catch (e) {
-        alert('Failed to load PDF.');
-        return null;
-    }
-};
 
-const downloadPdf = async () => {
-    const url = await getPdfBlob();
-    if (url) {
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', `${comic.value?.title || 'comic'}.pdf`);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-    }
-};
-
-const handleUploadPdf = async (event: Event) => {
-    const target = event.target as HTMLInputElement;
-    if (target.files && target.files.length > 0) {
-        const file = target.files[0];
-        if (!file) return;
-        
-        // Validate file type
-        if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
-            alert('Please upload a PDF file.');
-            target.value = '';
-            return;
-        }
-        
-        // Check file size (100MB max)
-        if (file.size > 100 * 1024 * 1024) {
-            alert('PDF file is too large. Maximum size is 100MB.');
-            target.value = '';
-            return;
-        }
-        
-        uploading.value = true;
-        try {
-            await uploadComicPdf(comicId, file);
-            await fetchComic(); // Refresh to see updated status
-            pdfSource.value = null; // Reset cached source
-            pdfDocument.value = null; // Clear cached document
-            alert('PDF uploaded successfully!');
-        } catch (e: any) {
-            console.error(e);
-            const errorMsg = e?.response?.data?.detail || 'Failed to upload PDF';
-            alert(errorMsg);
-        } finally {
-            uploading.value = false;
-            // Clear input
-            target.value = '';
-        }
-    }
-}
 
 
 const handleUploadCover = async (event: Event) => {
@@ -564,11 +577,11 @@ const handleUploadCover = async (event: Event) => {
                 </div>
 
                 <div class="primary-actions">
-                    <button v-if="comic.pdf_url" @click="handleReadOnline" class="btn btn-read">
-                        <BookOpen class="icon" :size="20" /> Read Now
+                    <button v-if="comic.chapters && comic.chapters.length > 0" @click="openFirstChapter" class="btn btn-read">
+                        <BookOpen class="icon" :size="20" /> Start Reading
                     </button>
                     <button v-else disabled class="btn btn-disabled">
-                        No PDF Available
+                        No Chapters
                     </button>
                     <!-- Future: Add Favorite / Download buttons here -->
                 </div>
@@ -578,6 +591,10 @@ const handleUploadCover = async (event: Event) => {
             <div class="right-col">
                 <div class="header-info">
                     <h1 class="comic-title">{{ comic.title }}</h1>
+                    <div class="meta-row">
+                        <span class="author">By {{ comic.author }}</span>
+                        <span class="status-badge" :class="comic.status.toLowerCase()">{{ comic.status }}</span>
+                    </div>
                     <div class="genres">
                         <span v-for="g in comic.genres" :key="g" class="genre-tag">{{ g }}</span>
                     </div>
@@ -587,17 +604,52 @@ const handleUploadCover = async (event: Event) => {
                     <h3>Synopsis</h3>
                     <p>{{ comic.description }}</p>
                 </div>
+
+                <!-- Chapters Section -->
+                <div class="chapters-section">
+                    <h3>Chapters</h3>
+                    <div v-if="comic.chapters && comic.chapters.length > 0" class="chapter-list">
+                        <div v-for="chapter in comic.chapters" :key="chapter.id" class="chapter-item">
+                            <div class="chapter-info">
+                                <span class="chapter-num">Ch. {{ chapter.chapter_number }}</span>
+                                <span class="chapter-title">{{ chapter.title }}</span>
+                            </div>
+                            <div class="chapter-actions">
+                                <button v-if="chapter.pdf_url" @click="handleReadChapter(chapter)" class="btn-sm btn-read-chapter">Read</button>
+                                
+                                <div v-if="isSuperuser" class="admin-chapter-actions">
+                                    <label class="btn-icon-sm" title="Upload PDF">
+                                        <FileText :size="14" />
+                                        <input type="file" accept="application/pdf" @change="(e) => handleChapterPdfUpload(chapter.id, e)" style="display:none;" />
+                                    </label>
+                                    <button @click="handleDeleteChapter(chapter.id)" class="btn-icon-sm text-danger" title="Delete">
+                                        <Trash2 :size="14" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-else class="no-chapters">
+                        No chapters available.
+                    </div>
+                </div>
                 
                 <!-- Admin Zone -->
                 <div v-if="isSuperuser" class="admin-panel">
                     <div class="admin-header">Admin Controls</div>
                     <div class="admin-grid">
-                        <label class="btn btn-admin" :class="{ 'uploading': uploading }">
-                            <FileText :size="18" />
-                            {{ uploading ? 'Wait...' : (comic.pdf_url ? 'Replace PDF' : 'Upload PDF') }}
-                            <input type="file" accept="application/pdf" @change="handleUploadPdf" :disabled="uploading" style="display:none;" />
-                        </label>
-                        
+                        <!-- Add Chapter Form -->
+                        <div class="add-chapter-form">
+                            <h4>Add New Chapter</h4>
+                            <div class="form-row">
+                                <input type="number" v-model="newChapterNumber" placeholder="Num" class="input-sm" step="0.1" />
+                                <input type="text" v-model="newChapterTitle" placeholder="Chapter Title" class="input-sm flex-1" />
+                                <button @click="handleCreateChapter" :disabled="creatingChapter" class="btn btn-admin btn-sm">
+                                    <Plus :size="16" /> Add
+                                </button>
+                            </div>
+                        </div>
+
                         <label class="btn btn-admin" :class="{ 'uploading': uploading }">
                             <ImageIcon :size="18" />
                             {{ uploading ? 'Wait...' : (comic.cover_image_url ? 'Replace Cover' : 'Upload Cover') }}
@@ -1291,4 +1343,176 @@ const handleUploadCover = async (event: Event) => {
         padding: 0.8rem;
     }
 }
+
+/* Metadata Styles */
+.meta-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    font-size: 1rem;
+    color: #ccc;
+}
+
+.author {
+    font-weight: 500;
+}
+
+.status-badge {
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    font-weight: 700;
+}
+
+.status-badge.ongoing {
+    background: rgba(100, 200, 100, 0.2);
+    color: #8f8;
+}
+
+.status-badge.completed {
+    background: rgba(100, 150, 255, 0.2);
+    color: #8af;
+}
+
+.status-badge.hiatus {
+    background: rgba(255, 150, 100, 0.2);
+    color: #fa8;
+}
+
+/* Chapter List Styles */
+.chapters-section {
+    margin-top: 2rem;
+    margin-bottom: 2rem;
+}
+
+.chapters-section h3 {
+    margin-bottom: 1rem;
+    color: var(--primary);
+}
+
+.chapter-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.chapter-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.chapter-item:hover {
+    background: rgba(255,255,255,0.06);
+}
+
+.chapter-info {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.chapter-num {
+    font-weight: 700;
+    color: #fff;
+    min-width: 60px;
+}
+
+.chapter-title {
+    color: #aaa;
+}
+
+.chapter-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.btn-sm {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+}
+
+.btn-read-chapter {
+    background: var(--primary);
+    color: #121212;
+    font-weight: 600;
+}
+
+.btn-read-chapter:hover {
+    filter: brightness(1.1);
+}
+
+.admin-chapter-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-left: 1rem;
+    padding-left: 1rem;
+    border-left: 1px solid rgba(255,255,255,0.1);
+}
+
+.btn-icon-sm {
+    background: rgba(255,255,255,0.1);
+    border: none;
+    color: #ccc;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-icon-sm:hover {
+    background: rgba(255,255,255,0.2);
+    color: #fff;
+}
+
+.text-danger:hover {
+    background: rgba(255, 59, 48, 0.2);
+    color: #ff3b30;
+}
+
+.add-chapter-form {
+    grid-column: 1 / -1;
+    background: rgba(0,0,0,0.2);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+.add-chapter-form h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.9rem;
+    color: #aaa;
+}
+
+.form-row {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.input-sm {
+    padding: 0.4rem;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #fff;
+    border-radius: 4px;
+}
+
+.flex-1 {
+    flex: 1;
+}
+
 </style>

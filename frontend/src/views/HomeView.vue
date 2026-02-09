@@ -155,7 +155,13 @@ const getGenreBadgeColor = (genre: string) => {
 
                 <div class="card-content">
                     <div class="card-header">
-                        <h3>{{ comic.title }}</h3>
+                        <div class="header-main">
+                            <h3>{{ comic.title }}</h3>
+                            <div class="meta-info">
+                                <span class="card-author">by {{ comic.author }}</span>
+                                <span class="card-status" :class="comic.status.toLowerCase()">{{ comic.status }}</span>
+                            </div>
+                        </div>
                         <div v-if="isSuperuser" class="checkbox-wrapper">
                             <input 
                                 type="checkbox" 
@@ -611,5 +617,54 @@ h3 {
     .description {
         font-size: 0.85rem;
     }
+}
+</style>
+
+<style scoped>
+/* Card Metadata Styling */
+.header-main {
+    flex: 1;
+    min-width: 0; 
+    margin-right: 0.5rem;
+}
+
+.meta-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.2rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.card-author {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+}
+
+.card-status {
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    font-weight: 700;
+}
+
+.card-status.ongoing {
+    background: rgba(100, 200, 100, 0.15);
+    color: #8f8;
+}
+
+.card-status.completed {
+    background: rgba(100, 150, 255, 0.15);
+    color: #8af;
+}
+
+.card-status.hiatus {
+    background: rgba(255, 150, 100, 0.15);
+    color: #fa8;
 }
 </style>
