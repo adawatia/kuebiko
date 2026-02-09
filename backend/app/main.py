@@ -18,11 +18,20 @@ from fastapi_users.db import SQLAlchemyUserDatabase
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
+from fastapi.staticfiles import StaticFiles
+import os
+
 app = FastAPI(
     title="Comic API",
     description="API for managing comics and their PDF files",
     version="1.0.0"
 )
+
+# Ensure static directory exists
+os.makedirs("static", exist_ok=True)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # CORS middleware
 # Build allowed origins list
