@@ -97,6 +97,14 @@ const getGenreBadgeColor = (genre: string) => {
     };
     return colors[genre] || '#8395a7';
 };
+
+const getImageUrl = (url: string | null) => {
+    if (!url) return '';
+    if (url.startsWith('http')) return url;
+    // Remove leading slash if both have it to avoid double slash, simpler:
+    // API_URL usually doesn't end with slash based on client.ts default
+    return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+};
 </script>
 
 <template>
@@ -147,7 +155,7 @@ const getGenreBadgeColor = (genre: string) => {
                 @click="toggleSelection(comic.id)"
             >
                 <div class="card-image" v-if="comic.cover_image_url">
-                    <img :src="comic.cover_image_url" :alt="comic.title" loading="lazy" />
+                    <img :src="getImageUrl(comic.cover_image_url)" :alt="comic.title" loading="lazy" />
                 </div>
                 <div class="card-image placeholder" v-else>
                     <span>{{ comic.title.charAt(0) }}</span>
@@ -591,13 +599,22 @@ h3 {
     }
 
     .pagination {
-        flex-direction: column;
-        gap: 0.8rem;
-        padding: 1rem;
+        bottom: 1rem;
+        padding: 0.6rem 1.2rem;
+        gap: 1rem;
+        width: 90%;
+        max-width: 400px;
     }
 
     .pagination button {
-        width: 100%;
+        padding: 0.6rem 1rem;
+        font-size: 0.9rem;
+        flex: 1; /* Distribute space evenly */
+    }
+    
+    .pagination span {
+        font-size: 0.9rem;
+        white-space: nowrap;
     }
 }
 
@@ -618,9 +635,8 @@ h3 {
         font-size: 0.85rem;
     }
 }
-</style>
 
-<style scoped>
+
 /* Card Metadata Styling */
 .header-main {
     flex: 1;

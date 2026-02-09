@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch, nextTick, shallowRef } from 'vue';
-import { BookOpen, Image as ImageIcon, FileText, Trash2, X, AlertCircle, Book, Loader2, ArrowUpDown, ChevronLeft, ChevronRight, Plus, Minus, Minimize, Maximize } from 'lucide-vue-next';
+import { BookOpen, Image as ImageIcon, FileText, Trash2, X, AlertCircle, Book, Loader2, ArrowUpDown, ChevronLeft, ChevronRight, Plus, Minus, Minimize, Maximize, Edit2, Check } from 'lucide-vue-next';
 import { useRoute, useRouter } from 'vue-router';
 import { getComic, deleteComic, updateComic, type Comic } from '../api/comics';
-import { createChapter, uploadChapterPdf, deleteChapter, type Chapter } from '../api/chapters';
+import { createChapter, uploadChapterPdf, deleteChapter, updateChapter, type Chapter } from '../api/chapters';
 import apiClient, { API_URL } from '../api/client';
 import VuePdfEmbed from 'vue-pdf-embed';
 import { useAuth } from '../store';
@@ -13,6 +13,12 @@ import * as pdfjsLib from 'pdfjs-dist';
 
 // Configure Worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
+const getAssetUrl = (url: string | null) => {
+    if (!url) return '';
+    if (url.startsWith('http')) return url;
+    return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+};
 
 const route = useRoute();
 const router = useRouter();
@@ -230,7 +236,7 @@ const handleReadChapter = (chapter: Chapter) => {
         
         // Use the Supabase URL directly
         pdfSource.value = {
-            url: chapter.pdf_url,
+            url: getAssetUrl(chapter.pdf_url),
             withCredentials: false
         };
 
@@ -252,6 +258,8 @@ const handleReadChapter = (chapter: Chapter) => {
 const newChapterNumber = ref<number | null>(null);
 const newChapterTitle = ref('');
 const creatingChapter = ref(false);
+const showAddChapter = ref(false);
+const chaptersUploading = ref(new Set<number>());
 
 const handleCreateChapter = async () => {
     if (!newChapterNumber.value || !newChapterTitle.value) {
@@ -292,30 +300,72 @@ const handleDeleteChapter = async (chapterId: number) => {
 };
 
 const handleChapterPdfUpload = async (chapterId: number, event: Event) => {
-    const target = event.target as HTMLInputElement;
-    if (target.files && target.files.length > 0) {
-        const file = target.files[0];
-        if (!file) return;
-        
-        if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
-            alert('Please upload a PDF file.');
-            return;
-        }
-        
-        uploading.value = true;
+    const input = event.target as HTMLInputElement;
+    if (input.files && input.files[0]) {
+        const file = input.files[0];
         try {
             await uploadChapterPdf(chapterId, file);
             await fetchComic();
-            alert('PDF uploaded successfully!');
-        } catch (e: any) {
-             const errorMsg = e?.response?.data?.detail || 'Failed to upload PDF';
-             alert(errorMsg);
+            alert("PDF uploaded successfully!");
+        } catch (e) {
+            console.error(e);
+            alert("Failed to upload PDF");
         } finally {
-            uploading.value = false;
-            target.value = '';
+            input.value = ''; // Reset input
         }
     }
 };
+
+// Edit Chapter Functionality
+const editingChapterId = ref<number | null>(null);
+const editForm = ref({
+    chapter_number: 0,
+    title: ''
+});
+
+const startEditingChapter = (chapter: Chapter) => {
+    editingChapterId.value = chapter.id;
+    editForm.value = {
+        chapter_number: chapter.chapter_number,
+        title: chapter.title
+    };
+};
+
+const cancelEditChapter = () => {
+    editingChapterId.value = null;
+    editForm.value = { chapter_number: 0, title: '' };
+};
+
+const saveChapterEdit = async () => {
+    if (!editingChapterId.value) return;
+    
+    try {
+        await updateChapter(editingChapterId.value, {
+            chapter_number: editForm.value.chapter_number,
+            title: editForm.value.title
+        });
+        await fetchComic();
+        editingChapterId.value = null;
+    } catch (e) {
+        console.error(e);
+        alert("Failed to update chapter details");
+    }
+};
+
+// Auto-calculate next chapter number when adding
+watch(showAddChapter, (newVal) => {
+    if (newVal && comic.value?.chapters) {
+        if (comic.value.chapters.length > 0) {
+            // Find max chapter number
+            const numbers = comic.value.chapters.map(c => c.chapter_number);
+            const maxNum = Math.max(...numbers);
+            newChapterNumber.value = maxNum + 1;
+        } else {
+            newChapterNumber.value = 1;
+        }
+    }
+});
+
 
 const handleKeydown = (e: KeyboardEvent) => {
     if (!readingMode.value) return;
@@ -455,6 +505,8 @@ const handleUploadCover = async (event: Event) => {
         reader.readAsDataURL(file);
     }
 };
+
+
 </script>
 
 <template>
@@ -556,7 +608,7 @@ const handleUploadCover = async (event: Event) => {
     <!-- Background Hero -->
     <div class="hero-bg">
         <div class="hero-image" 
-             :style="comic.cover_image_url ? { backgroundImage: `url(${comic.cover_image_url})` } : {}">
+             :style="comic.cover_image_url ? { backgroundImage: `url(${getAssetUrl(comic.cover_image_url)})` } : {}">
         </div>
         <div class="hero-overlay"></div>
     </div>
@@ -568,12 +620,20 @@ const handleUploadCover = async (event: Event) => {
             <div class="left-col">
                 <div class="cover-card">
                     <div v-if="comic.cover_image_url" class="cover-image-wrapper">
-                        <img :src="comic.cover_image_url" :alt="comic.title" class="cover-image" />
+                        <img :src="getAssetUrl(comic.cover_image_url)" :alt="comic.title" class="cover-image" />
                     </div>
                     <div v-else class="cover-placeholder">
                         <Book class="placeholder-icon" :size="48" />
                         <span class="placeholder-text">No Cover</span>
                     </div>
+
+                    <!-- Superuser Cover Edit Overlay -->
+                    <label v-if="isSuperuser" class="cover-edit-overlay" :class="{ 'uploading': uploading }">
+                        <div class="edit-icon-bg">
+                            <ImageIcon :size="20" />
+                        </div>
+                        <input type="file" accept="image/*" @change="handleUploadCover" :disabled="uploading" style="display:none;" />
+                    </label>
                 </div>
 
                 <div class="primary-actions">
@@ -607,26 +667,75 @@ const handleUploadCover = async (event: Event) => {
 
                 <!-- Chapters Section -->
                 <div class="chapters-section">
-                    <h3>Chapters</h3>
+                    <div class="section-header">
+                        <h3>Chapters</h3>
+                        <button v-if="isSuperuser" @click="showAddChapter = !showAddChapter" class="btn-icon-text">
+                            <Plus :size="16" /> {{ showAddChapter ? 'Cancel' : 'Add Chapter' }}
+                        </button>
+                    </div>
+
+                    <!-- Add Chapter Form (Inline) -->
+                    <div v-if="showAddChapter" class="add-chapter-inline">
+                         <div class="form-row">
+                            <input type="number" v-model="newChapterNumber" placeholder="Num" class="input-inline num-input" step="0.1" />
+                            <input type="text" v-model="newChapterTitle" placeholder="Chapter Title" class="input-inline text-input" />
+                            <button @click="handleCreateChapter" :disabled="creatingChapter" class="btn btn-primary btn-sm">
+                                <Plus :size="16" /> Add
+                            </button>
+                        </div>
+                    </div>
+
                     <div v-if="comic.chapters && comic.chapters.length > 0" class="chapter-list">
-                        <div v-for="chapter in comic.chapters" :key="chapter.id" class="chapter-item">
-                            <div class="chapter-info">
-                                <span class="chapter-num">Ch. {{ chapter.chapter_number }}</span>
-                                <span class="chapter-title">{{ chapter.title }}</span>
-                            </div>
-                            <div class="chapter-actions">
-                                <button v-if="chapter.pdf_url" @click="handleReadChapter(chapter)" class="btn-sm btn-read-chapter">Read</button>
-                                
-                                <div v-if="isSuperuser" class="admin-chapter-actions">
-                                    <label class="btn-icon-sm" title="Upload PDF">
-                                        <FileText :size="14" />
-                                        <input type="file" accept="application/pdf" @change="(e) => handleChapterPdfUpload(chapter.id, e)" style="display:none;" />
-                                    </label>
-                                    <button @click="handleDeleteChapter(chapter.id)" class="btn-icon-sm text-danger" title="Delete">
-                                        <Trash2 :size="14" />
-                                    </button>
+                        <div v-for="chapter in comic.chapters" :key="chapter.id" class="chapter-item" :class="{ 'editing': editingChapterId === chapter.id }">
+                            
+                            <!-- VIEW MODE -->
+                            <template v-if="editingChapterId !== chapter.id">
+                                <div class="chapter-info">
+                                    <span class="chapter-num">Ch. {{ chapter.chapter_number }}</span>
+                                    <span class="chapter-title">{{ chapter.title }}</span>
                                 </div>
-                            </div>
+                                <div class="chapter-actions">
+                                    <button v-if="chapter.pdf_url" @click="handleReadChapter(chapter)" class="btn-sm btn-read-chapter">Read</button>
+                                    
+                                    <div v-if="isSuperuser" class="admin-chapter-actions">
+                                        <button @click="startEditingChapter(chapter)" class="btn-icon-sm" title="Edit Info">
+                                            <Edit2 :size="14" />
+                                        </button>
+
+                                        <label class="btn-icon-sm" :title="chapter.pdf_url ? 'Replace PDF' : 'Upload PDF'" :class="{ 'has-pdf': chapter.pdf_url, 'uploading': chaptersUploading.has(chapter.id) }">
+                                            <Loader2 v-if="chaptersUploading.has(chapter.id)" class="spinner-icon-sm" :size="14" />
+                                            <FileText v-else :size="14" />
+                                            <input type="file" accept="application/pdf" @change="(e) => handleChapterPdfUpload(chapter.id, e)" :disabled="chaptersUploading.has(chapter.id)" style="display:none;" />
+                                        </label>
+                                        
+                                        <button @click="handleDeleteChapter(chapter.id)" class="btn-icon-sm text-danger" title="Delete">
+                                            <Trash2 :size="14" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </template>
+
+                            <!-- EDIT MODE -->
+                            <template v-else>
+                                <div class="chapter-edit-form">
+                                    <div class="edit-inputs">
+                                        <div class="input-group">
+                                            <span class="input-label">Ch.</span>
+                                            <input type="number" v-model="editForm.chapter_number" class="input-inline num-input" step="0.1" />
+                                        </div>
+                                        <input type="text" v-model="editForm.title" class="input-inline text-input" placeholder="Chapter Title" />
+                                    </div>
+                                    <div class="edit-actions">
+                                        <button @click="saveChapterEdit" class="btn-sm btn-save" title="Save">
+                                            <Check :size="14" /> Save
+                                        </button>
+                                        <button @click="cancelEditChapter" class="btn-sm btn-cancel" title="Cancel">
+                                            <X :size="14" /> Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            </template>
+
                         </div>
                     </div>
                     <div v-else class="no-chapters">
@@ -634,33 +743,17 @@ const handleUploadCover = async (event: Event) => {
                     </div>
                 </div>
                 
-                <!-- Admin Zone -->
-                <div v-if="isSuperuser" class="admin-panel">
-                    <div class="admin-header">Admin Controls</div>
-                    <div class="admin-grid">
-                        <!-- Add Chapter Form -->
-                        <div class="add-chapter-form">
-                            <h4>Add New Chapter</h4>
-                            <div class="form-row">
-                                <input type="number" v-model="newChapterNumber" placeholder="Num" class="input-sm" step="0.1" />
-                                <input type="text" v-model="newChapterTitle" placeholder="Chapter Title" class="input-sm flex-1" />
-                                <button @click="handleCreateChapter" :disabled="creatingChapter" class="btn btn-admin btn-sm">
-                                    <Plus :size="16" /> Add
-                                </button>
-                            </div>
-                        </div>
-
-                        <label class="btn btn-admin" :class="{ 'uploading': uploading }">
-                            <ImageIcon :size="18" />
-                            {{ uploading ? 'Wait...' : (comic.cover_image_url ? 'Replace Cover' : 'Upload Cover') }}
-                            <input type="file" accept="image/*" @change="handleUploadCover" :disabled="uploading" style="display:none;" />
-                        </label>
-
-                        <button @click="handleDelete" class="btn btn-admin btn-danger">
-                            <Trash2 :size="18" /> Delete
+                <!-- Danger Zone -->
+                <div v-if="isSuperuser" class="danger-zone">
+                    <div class="danger-header">
+                        <h4>Danger Zone</h4>
+                    </div>
+                    <div class="danger-content">
+                         <p>Once you delete a comic, there is no going back. Please be certain.</p>
+                         <button @click="handleDelete" class="btn btn-danger-outline">
+                            <Trash2 :size="16" /> Delete Comic
                         </button>
                     </div>
-                    <p class="admin-hint">Max file sizes: PDF 100MB, Image 5MB</p>
                 </div>
             </div>
         </div>
@@ -1515,4 +1608,295 @@ const handleUploadCover = async (event: Event) => {
     flex: 1;
 }
 
+
+
+/* New Layout Elements */
+.cover-card {
+    position: relative;
+    overflow: hidden;
+}
+
+.cover-edit-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity 0.3s;
+}
+
+.cover-card:hover .cover-edit-overlay {
+    opacity: 1;
+}
+
+.edit-icon-bg {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 1rem;
+    border-radius: 50%;
+    display: flex;
+}
+
+.cover-edit-overlay.uploading {
+    opacity: 1;
+    cursor: wait;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.btn-icon-text {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-muted);
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-icon-text:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.add-chapter-inline {
+    background: rgba(255, 255, 255, 0.03);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.input-inline {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: white;
+    padding: 0.5rem 0.8rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+
+.num-input {
+    width: 80px;
+}
+
+.text-input {
+    flex: 1;
+}
+
+.danger-zone {
+    margin-top: 4rem;
+    border: 1px solid rgba(244, 67, 54, 0.2);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.danger-header {
+    background: rgba(244, 67, 54, 0.1);
+    padding: 0.8rem 1.2rem;
+    border-bottom: 1px solid rgba(244, 67, 54, 0.2);
+}
+
+.danger-header h4 {
+    margin: 0;
+    color: #ef5350;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.danger-content {
+    padding: 1.2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(244, 67, 54, 0.02);
+}
+
+.danger-content p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    max-width: 70%;
+}
+
+.btn-danger-outline {
+    background: transparent;
+    border: 1px solid #ef5350;
+    color: #ef5350;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.2s;
+}
+
+.btn-danger-outline:hover {
+    background: #ef5350;
+    color: white;
+}
+
+@media (max-width: 768px) {
+    /* Mobile Adjustments for New Elements */
+    
+    /* Reveal edit overlay on mobile (touch) */
+    .cover-edit-overlay {
+        opacity: 1;
+        background: rgba(0,0,0,0.3);
+    }
+    
+    .edit-icon-bg {
+        background: rgba(0,0,0,0.6);
+        padding: 0.8rem;
+    }
+
+    /* Stack inline forms */
+    .add-chapter-inline .form-row {
+        flex-direction: column;
+        gap: 0.8rem;
+    }
+
+    .add-chapter-inline .num-input,
+    .add-chapter-inline .text-input {
+        width: 100%;
+    }
+
+    /* Stack Danger Zone */
+    .danger-content {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: stretch;
+        text-align: center;
+    }
+
+    .danger-content p {
+        max-width: 100%;
+        margin-bottom: 0.5rem;
+    }
+
+    .btn-danger-outline {
+        justify-content: center;
+        width: 100%;
+    }
+
+    /* Chapter List Mobile */
+    .chapter-item {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.8rem;
+    }
+
+    .chapter-info {
+        justify-content: space-between;
+    }
+    
+    .chapter-actions {
+        justify-content: flex-end;
+        border-top: 1px solid rgba(255,255,255,0.05);
+        padding-top: 0.8rem;
+    }
+    
+    
+    .admin-chapter-actions {
+        margin-left: 0;
+        padding-left: 0;
+        border-left: none;
+    }
+}
+
+/* Edit Mode Styles */
+.chapter-item.editing {
+    background: rgba(var(--primary-rgb), 0.1);
+    border-color: var(--primary);
+}
+
+.chapter-edit-form {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    gap: 1rem;
+}
+
+.edit-inputs {
+    display: flex;
+    gap: 1rem;
+    flex: 1;
+    align-items: center;
+}
+
+.input-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.input-label {
+    color: #888;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.edit-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-save {
+    background: #4caf50;
+    color: white;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.btn-cancel {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ccc;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.spinner-icon-sm {
+    animation: spin 1s linear infinite;
+}
+
+.btn-icon-sm.uploading {
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+@media (max-width: 768px) {
+    .chapter-edit-form {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .edit-inputs {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .edit-actions {
+        justify-content: flex-end;
+    }
+}
 </style>
