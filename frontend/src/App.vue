@@ -44,7 +44,10 @@ onMounted(() => {
       <nav>
         <div class="logo">
             <img src="./assets/logo.svg" alt="Kuebiko Logo" class="logo-img" />
-            <span>Kuebiko</span>
+            <div class="logo-text-wrapper">
+                <span>Kuebiko</span>
+                <span class="alpha-badge">ALPHA</span>
+            </div>
         </div>
         
         <!-- Mobile Menu Button -->
@@ -116,10 +119,11 @@ nav {
 .logo {
     display: flex;
     align-items: center;
-    gap: 0.8rem;
-    font-size: 1.5rem;
-    font-weight: 700;
+    gap: 1rem;
+    font-size: 1.75rem;
+    font-weight: 800;
     color: white;
+    letter-spacing: -0.02em;
 }
 
 .logo-img {
@@ -127,11 +131,47 @@ nav {
     width: auto;
 }
 
+.logo-text-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
 .logo span {
-    background: linear-gradient(45deg, #fff, #ccc);
+    background: linear-gradient(135deg, #ffffff 0%, #8ab4f8 50%, #a5b4fc 100%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
+    font-family: 'Inter', sans-serif;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    text-shadow: 0 0 30px rgba(138, 180, 248, 0.3);
+    position: relative;
+}
+
+.alpha-badge {
+    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    color: #000;
+    font-size: 0.6rem;
+    font-weight: 800;
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    box-shadow: 0 2px 10px rgba(251, 191, 36, 0.4);
+    -webkit-background-clip: unset;
+    background-clip: unset;
+    -webkit-text-fill-color: unset;
+    animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+    0%, 100% {
+        box-shadow: 0 2px 10px rgba(251, 191, 36, 0.4);
+    }
+    50% {
+        box-shadow: 0 2px 20px rgba(251, 191, 36, 0.6), 0 0 30px rgba(251, 191, 36, 0.3);
+    }
 }
 
 .nav-links {
