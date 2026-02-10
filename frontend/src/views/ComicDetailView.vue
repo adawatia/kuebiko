@@ -179,7 +179,7 @@ onMounted(async () => {
     
     const shouldRead = route.query.read === 'true';
     const firstChapter = chapters.value?.[0]; // Use paginated list
-    if (shouldRead && firstChapter && firstChapter.image_urls?.length > 0) {
+    if (shouldRead && firstChapter && firstChapter.image_urls && firstChapter.image_urls.length > 0) {
         handleReadChapter(firstChapter);
     }
 });
