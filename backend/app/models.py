@@ -33,7 +33,7 @@ class Chapter(Base):
     comic_id = Column(Integer, ForeignKey("comics.id", ondelete="CASCADE"), nullable=False)
     chapter_number = Column(Float, nullable=False)
     title = Column(String)
-    pdf_url = Column(String)
+    image_urls = Column(JSONB, default=list)  # Array of image URLs for the chapter
     page_count = Column(Integer, nullable=True)
     is_published = Column(Boolean, default=False)
     published_at = Column(DateTime(timezone=True), nullable=True)

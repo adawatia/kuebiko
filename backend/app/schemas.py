@@ -36,7 +36,7 @@ class ChapterUpdate(BaseModel):
 class ChapterOut(ChapterBase):
     id: int
     comic_id: int
-    pdf_url: Optional[str] = Field(None, description="PDF file URL")
+    image_urls: List[str] = Field(default_factory=list, description="Array of image URLs for the chapter")
     created_at: datetime
     updated_at: datetime
     

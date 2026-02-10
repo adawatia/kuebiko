@@ -8,6 +8,7 @@ from app.users import current_active_user, current_superuser
 from typing import List
 from datetime import datetime
 import math
+import os
 
 router = APIRouter(prefix="/chapters", tags=["chapters"])
 
@@ -43,7 +44,7 @@ def create_chapter(
             comic_id=chapter.comic_id,
             chapter_number=chapter.chapter_number,
             title=chapter.title,
-            pdf_url=None, # Upload separately
+            image_urls=[],  # Upload images separately
             page_count=chapter.page_count,
             is_published=chapter.is_published,
             published_at=published_at
@@ -128,73 +129,90 @@ def update_chapter(chapter_id: int, chapter_update: ChapterUpdate, db: Session =
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to update chapter: {str(e)}")
 
-@router.post("/{chapter_id}/pdf", status_code=200)
-async def upload_chapter_pdf(
+
+@router.post("/{chapter_id}/images", status_code=200)
+async def upload_chapter_images(
     chapter_id: int,
-    pdf: UploadFile = File(..., description="PDF file of the chapter."),
+    images: List[UploadFile] = File(..., description="Image files for the chapter pages."),
     db: Session = Depends(get_db),
     user: User = Depends(current_superuser)
 ):
-    """Upload or replace the PDF file for a chapter."""
+    """Upload or replace the images for a chapter."""
     chapter = db.query(Chapter).filter(Chapter.id == chapter_id).first()
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
     
-    if not pdf.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
+    if not images:
+        raise HTTPException(status_code=400, detail="No images provided")
+    
+    # Validate all images first
+    valid_extensions = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+    images_data = []
+    extensions = []
+    
+    for img in images:
+        if not img.filename:
+            raise HTTPException(status_code=400, detail="Invalid image file")
+        
+        ext = os.path.splitext(img.filename.lower())[1]
+        if ext not in valid_extensions:
+            raise HTTPException(status_code=400, detail=f"Invalid file type: {img.filename}. Only JPG, PNG, GIF, and WebP are allowed.")
+        
+        contents = await img.read()
+        if len(contents) == 0:
+            raise HTTPException(status_code=400, detail=f"Uploaded image {img.filename} is empty.")
+        
+        max_size = 10 * 1024 * 1024  # 10MB per image
+        if len(contents) > max_size:
+            raise HTTPException(status_code=400, detail=f"Image {img.filename} is too large (max 10MB).")
+        
+        images_data.append(contents)
+        extensions.append(ext)
     
     try:
-        contents = await pdf.read()
-        if len(contents) == 0:
-            raise HTTPException(status_code=400, detail="Uploaded PDF is empty.")
-        
-        max_size = 100 * 1024 * 1024  # 100MB
-        if len(contents) > max_size:
-            raise HTTPException(status_code=400, detail="PDF file too large (max 100MB).")
-        
-        if not contents.lstrip().startswith(b'%PDF'):
-            raise HTTPException(status_code=400, detail="File is not a valid PDF.")
-
-        # Upload to storage
-        filename = f"{chapter_id}_{pdf.filename}"
-        
-        # We need comic to get title if we want to follow existing pattern, but primary org is now ID-based.
+        # Get comic for folder organization
         comic = db.query(Comic).filter(Comic.id == chapter.comic_id).first()
         if not comic:
-            # Should not happen due to FK
             raise HTTPException(status_code=404, detail="Associated comic not found")
 
-        old_pdf_url = chapter.pdf_url
+        # Store old image URLs for cleanup
+        old_image_urls = chapter.image_urls or []
         
-        pdf_url = storage_client.upload_pdf(contents, comic.title, filename, comic_id=comic.id)
+        # Upload new images
+        image_urls = storage_client.upload_chapter_images(images_data, comic.id, chapter_id, extensions)
         
-        chapter.pdf_url = pdf_url
+        # Update chapter with new image URLs and page count
+        chapter.image_urls = image_urls
+        chapter.page_count = len(image_urls)
         db.commit()
         db.refresh(chapter)
         
-        if old_pdf_url and old_pdf_url != pdf_url:
+        # Cleanup old images
+        for old_url in old_image_urls:
             try:
-                storage_client.delete_file(old_pdf_url)
+                storage_client.delete_file(old_url)
             except:
                 pass
                 
-        return {"ok": True, "pdf_url": pdf_url}
+        return {"ok": True, "image_urls": image_urls, "page_count": len(image_urls)}
 
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
-        # Cleanup uploaded file if DB update fails
-        if 'pdf_url' in locals() and pdf_url:
-            try:
-                storage_client.delete_file(pdf_url)
-            except:
-                pass
-        raise HTTPException(status_code=500, detail=f"Failed to upload PDF: {str(e)}")
+        # Cleanup uploaded files if DB update fails
+        if 'image_urls' in locals() and image_urls:
+            for url in image_urls:
+                try:
+                    storage_client.delete_file(url)
+                except:
+                    pass
+        raise HTTPException(status_code=500, detail=f"Failed to upload images: {str(e)}")
+
 
 @router.post("/batch-delete", status_code=status.HTTP_200_OK)
 def batch_delete_chapters(chapter_ids: List[int], db: Session = Depends(get_db), user: User = Depends(current_superuser)):
-    """Batch delete chapters and their associated PDF files."""
+    """Batch delete chapters and their associated images."""
     if not chapter_ids:
         raise HTTPException(status_code=400, detail="No chapter IDs provided")
     
@@ -206,16 +224,22 @@ def batch_delete_chapters(chapter_ids: List[int], db: Session = Depends(get_db),
         if not chapters:
             return {"message": "No chapters found to delete", "deleted_count": 0}
 
-        pdf_urls = [c.pdf_url for c in chapters if c.pdf_url]
+        # Collect all image URLs from all chapters
+        all_image_urls = []
+        for c in chapters:
+            if c.image_urls:
+                all_image_urls.extend(c.image_urls)
+        
         deleted_count = len(chapters)
         
         # Delete from DB
         db.query(Chapter).filter(Chapter.id.in_(chapter_ids)).delete(synchronize_session=False)
         db.commit()
         
-        for pdf_url in pdf_urls:
+        # Delete all images
+        for image_url in all_image_urls:
             try:
-                storage_client.delete_file(pdf_url)
+                storage_client.delete_file(image_url)
             except Exception:
                 pass
                 
@@ -230,14 +254,15 @@ def delete_chapter(chapter_id: int, db: Session = Depends(get_db), user: User = 
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
     
-    pdf_url = chapter.pdf_url
+    image_urls = chapter.image_urls or []
     try:
         db.delete(chapter)
         db.commit()
         
-        if pdf_url:
+        # Delete all chapter images
+        for image_url in image_urls:
             try:
-                storage_client.delete_file(pdf_url)
+                storage_client.delete_file(image_url)
             except:
                 pass
         return {"message": "Chapter deleted successfully"}

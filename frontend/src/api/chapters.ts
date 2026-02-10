@@ -5,7 +5,7 @@ export interface Chapter {
     comic_id: number;
     chapter_number: number;
     title: string;
-    pdf_url: string | null;
+    image_urls: string[];
     page_count: number | null;
     is_published: boolean;
     published_at: string | null;
@@ -54,10 +54,12 @@ export const deleteChapter = async (id: number): Promise<void> => {
     await apiClient.delete(`/chapters/${id}`);
 };
 
-export const uploadChapterPdf = async (id: number, file: File) => {
+export const uploadChapterImages = async (id: number, files: File[]) => {
     const formData = new FormData();
-    formData.append('pdf', file);
-    const response = await apiClient.post(`/chapters/${id}/pdf`, formData);
+    files.forEach((file) => {
+        formData.append('images', file);
+    });
+    const response = await apiClient.post(`/chapters/${id}/images`, formData);
     return response.data;
 };
 
