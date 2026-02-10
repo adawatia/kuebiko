@@ -272,6 +272,17 @@ nav {
 }
 
 main {
+    padding: 0;
+    width: 100%;
+    margin: 0;
+}
+
+main:has(.landing-container) {
+    padding: 0;
+    max-width: none;
+}
+
+main > :not(.landing-container) {
     padding: 2rem;
     max-width: 1200px;
     margin: 0 auto;
