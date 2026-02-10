@@ -30,6 +30,10 @@ const readerScroll = ref<HTMLElement | null>(null);
 // Scroll Mode
 const scrollMode = ref<'single' | 'vertical'>('single');
 
+// Zoom controls
+const zoomLevel = ref(1.0); // 1.0 = 100%, 0.5 = 50%, 2.0 = 200%
+const fitMode = ref<'width' | 'height' | 'none'>('width'); // Default to fit width
+
 const currentPage = computed(() => currentPageIndex.value + 1);
 const totalPages = computed(() => currentImages.value.length);
 
@@ -41,6 +45,31 @@ const scrollToTop = () => {
     if (readerScroll.value) {
         readerScroll.value.scrollTop = 0;
     }
+};
+
+const zoomIn = () => {
+    fitMode.value = 'none';
+    zoomLevel.value = Math.min(zoomLevel.value + 0.2, 3.0); // Max 300%
+};
+
+const zoomOut = () => {
+    fitMode.value = 'none';
+    zoomLevel.value = Math.max(zoomLevel.value - 0.2, 0.3); // Min 30%
+};
+
+const fitToWidth = () => {
+    fitMode.value = 'width';
+    zoomLevel.value = 1.0;
+};
+
+const fitToHeight = () => {
+    fitMode.value = 'height';
+    zoomLevel.value = 1.0;
+};
+
+const resetZoom = () => {
+    fitMode.value = 'none';
+    zoomLevel.value = 1.0;
 };
 
 const prevPage = () => {
@@ -66,6 +95,8 @@ const closeReader = () => {
     readingMode.value = false;
     currentImages.value = [];
     currentPageIndex.value = 0;
+    zoomLevel.value = 1.0;
+    fitMode.value = 'width';
 };
 
 const handleReadChapter = (chapter: Chapter) => {
@@ -90,6 +121,17 @@ const creatingChapter = ref(false);
 const showAddChapter = ref(false);
 const chaptersUploading = ref(new Set<number>());
 
+// Helper to calculate next chapter number
+const calculateNextChapterNumber = () => {
+    if (comic.value?.chapters && comic.value.chapters.length > 0) {
+        const numbers = comic.value.chapters.map(c => c.chapter_number);
+        const maxNum = Math.max(...numbers);
+        newChapterNumber.value = maxNum + 1;
+    } else {
+        newChapterNumber.value = 1;
+    }
+};
+
 const handleCreateChapter = async () => {
     if (!newChapterNumber.value || !newChapterTitle.value) {
         alert("Please enter chapter number and title.");
@@ -106,8 +148,11 @@ const handleCreateChapter = async () => {
             is_published: true
         });
         await fetchComic();
-        newChapterNumber.value = null;
+        
+        // Auto-increment for next chapter
+        calculateNextChapterNumber();
         newChapterTitle.value = '';
+        
         alert("Chapter created successfully!");
     } catch (e: any) {
         console.error(e);
@@ -122,6 +167,10 @@ const handleDeleteChapter = async (chapterId: number) => {
         try {
             await deleteChapter(chapterId);
             await fetchComic();
+            // Recalculate if the add form is open
+            if (showAddChapter.value) {
+                calculateNextChapterNumber();
+            }
         } catch (e) {
             alert("Failed to delete chapter");
         }
@@ -196,19 +245,40 @@ const saveChapterEdit = async () => {
 
 // Auto-calculate next chapter number when adding
 watch(showAddChapter, (newVal) => {
-    if (newVal && comic.value?.chapters) {
-        if (comic.value.chapters.length > 0) {
-            const numbers = comic.value.chapters.map(c => c.chapter_number);
-            const maxNum = Math.max(...numbers);
-            newChapterNumber.value = maxNum + 1;
-        } else {
-            newChapterNumber.value = 1;
-        }
+    if (newVal) {
+        calculateNextChapterNumber();
     }
 });
 
 const handleKeydown = (e: KeyboardEvent) => {
     if (!readingMode.value) return;
+    
+    // Zoom controls (work in both modes)
+    if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        zoomIn();
+        return;
+    }
+    if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        zoomOut();
+        return;
+    }
+    if (e.key === '0') {
+        e.preventDefault();
+        resetZoom();
+        return;
+    }
+    if (e.key === 'w' || e.key === 'W') {
+        e.preventDefault();
+        fitToWidth();
+        return;
+    }
+    if (e.key === 'h' || e.key === 'H') {
+        e.preventDefault();
+        fitToHeight();
+        return;
+    }
     
     if (scrollMode.value === 'vertical') {
        if (e.key === 'Escape') {
@@ -356,6 +426,12 @@ const handleUploadCover = async (event: Event) => {
                     :src="currentImages[currentPageIndex]" 
                     :alt="`Page ${currentPage}`"
                     class="comic-page-image"
+                    :class="{ 
+                        'fit-width': fitMode === 'width',
+                        'fit-height': fitMode === 'height',
+                        'manual-zoom': fitMode === 'none'
+                    }"
+                    :style="fitMode === 'none' ? { transform: `scale(${zoomLevel})` } : {}"
                     loading="eager"
                 />
             </div>
@@ -367,13 +443,27 @@ const handleUploadCover = async (event: Event) => {
                     :key="index"
                     :src="imageUrl" 
                     :alt="`Page ${index + 1}`"
-                    class="comic-page-image"
+                    class="comic-page-image vertical-image"
+                    :class="{ 
+                        'fit-width': fitMode === 'width',
+                        'manual-zoom': fitMode === 'none'
+                    }"
+                    :style="fitMode === 'none' ? { transform: `scale(${zoomLevel})`, transformOrigin: 'top center' } : {}"
                     :loading="index < 3 ? 'eager' : 'lazy'"
                 />
             </div>
         </div>
 
         <div class="reader-footer" v-if="scrollMode === 'single'">
+            <div class="zoom-controls">
+                <button @click="zoomOut" class="btn-icon" title="Zoom Out (-)"  >−</button>
+                <span class="zoom-label">{{ Math.round(zoomLevel * 100) }}%</span>
+                <button @click="zoomIn" class="btn-icon" title="Zoom In (+)">+</button>
+                <button @click="fitToWidth" class="btn-text" :class="{ 'active': fitMode === 'width' }" title="Fit to Width (W)">Fit Width</button>
+                <button @click="fitToHeight" class="btn-text" :class="{ 'active': fitMode === 'height' }" title="Fit to Height (H)">Fit Height</button>
+                <button @click="resetZoom" class="btn-text" title="Reset Zoom (0)">100%</button>
+            </div>
+
             <div class="pagination-controls">
                 <button @click="prevPage" :disabled="currentPageIndex <= 0" class="btn-icon">←</button>
                 <span class="page-counter">{{ currentPage }} / {{ totalPages }}</span>
@@ -382,6 +472,13 @@ const handleUploadCover = async (event: Event) => {
         </div>
         
         <div class="reader-footer" v-else>
+             <div class="zoom-controls">
+                <button @click="zoomOut" class="btn-icon" title="Zoom Out (-)" >−</button>
+                <span class="zoom-label">{{ Math.round(zoomLevel * 100) }}%</span>
+                <button @click="zoomIn" class="btn-icon" title="Zoom In (+)">+</button>
+                <button @click="fitToWidth" class="btn-text" :class="{ 'active': fitMode === 'width' }" title="Fit to Width (W)">Fit Width</button>
+                <button @click="resetZoom" class="btn-text" title="Reset Zoom (0)">100%</button>
+            </div>
              <div class="pagination-controls">
                 <span class="page-counter">{{ totalPages }} Pages</span>
             </div>
@@ -910,28 +1007,37 @@ const handleUploadCover = async (event: Event) => {
     align-items: center;
     gap: 1rem;
     flex: 1;
+    min-width: 0; /* Allow shrinking below content size */
+    margin-right: 1rem;
 }
 
 .chapter-num {
     font-weight: 700;
     color: var(--primary);
     min-width: 60px;
+    white-space: nowrap;
 }
 
 .chapter-title {
     flex: 1;
     font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .page-count {
     font-size: 0.85rem;
     color: var(--text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .chapter-actions {
     display: flex;
     align-items: center;
     gap: 0.75rem;
+    flex-shrink: 0; /* Prevent actions from shrinking */
 }
 
 .admin-chapter-actions {
@@ -1082,25 +1188,38 @@ const handleUploadCover = async (event: Event) => {
 }
 
 /* Reading Overlay */
+/* Reading Overlay */
 .reading-overlay {
     position: fixed;
     top: 0;
     left: 0;
     width: 100vw;
     height: 100vh;
-    background: #000;
+    background: #0a0a0f; /* Deep dark background */
     z-index: 9999;
     display: flex;
     flex-direction: column;
 }
 
 .reader-header {
-    background: rgba(0,0,0,0.9);
-    padding: 1rem 2rem;
+    background: rgba(20, 20, 30, 0.75);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 0.75rem 1.5rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    position: fixed;
+    top: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 90%;
+    max-width: 800px;
+    z-index: 100;
+    border-radius: 50px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    gap: 1rem;
 }
 
 .reader-title {
@@ -1115,8 +1234,8 @@ const handleUploadCover = async (event: Event) => {
 }
 
 .btn-icon {
-    background: rgba(255,255,255,0.1);
-    border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     color: white;
     padding: 0.6rem;
     border-radius: 8px;
@@ -1124,16 +1243,24 @@ const handleUploadCover = async (event: Event) => {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .btn-icon:hover:not(:disabled) {
-    background: rgba(255,255,255,0.2);
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.btn-icon:active {
+    transform: translateY(0);
 }
 
 .btn-icon:disabled {
     opacity: 0.3;
     cursor: not-allowed;
+    background: rgba(255, 255, 255, 0.02);
 }
 
 .close-btn {
@@ -1192,10 +1319,31 @@ const handleUploadCover = async (event: Event) => {
 }
 
 .comic-page-image {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
     display: block;
+    transition: transform 0.2s ease;
+    cursor: grab;
+}
+
+.comic-page-image:active {
+    cursor: grabbing;
+}
+
+/* Fit modes */
+.comic-page-image.fit-width {
+    width: 100%;
+    height: auto;
+    max-width: 100%;
+}
+
+.comic-page-image.fit-height {
+    width: auto;
+    height: 100%;
+    max-height: calc(100vh - 200px);
+}
+
+.comic-page-image.manual-zoom {
+    max-width: none;
+    max-height: none;
 }
 
 .vertical-reader .comic-page-image {
@@ -1204,14 +1352,73 @@ const handleUploadCover = async (event: Event) => {
     max-width: 100%;
 }
 
+.vertical-reader .comic-page-image.manual-zoom {
+    width: auto;
+}
+
 .reader-footer {
-    background: rgba(0,0,0,0.9);
-    padding: 1rem 2rem;
+    background: rgba(20, 20, 30, 0.75);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 0.75rem 1.5rem;
     display: flex;
-    justify-content: center;
+    justify-content: space-between;
     align-items: center;
-    gap: 2rem;
-    border-top: 1px solid rgba(255,255,255,0.1);
+    gap: 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: auto;
+    max-width: 90%;
+    z-index: 100;
+    border-radius: 50px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.zoom-label {
+    font-weight: 600;
+    min-width: 60px;
+    text-align: center;
+    font-size: 0.9rem;
+}
+
+.btn-text {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.8);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.btn-text:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.25);
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+.btn-text:active {
+    transform: translateY(0);
+}
+
+.btn-text.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #000;
+    font-weight: 700;
+    box-shadow: 0 0 15px rgba(var(--primary-rgb), 0.3);
 }
 
 .pagination-controls {
@@ -1224,6 +1431,10 @@ const handleUploadCover = async (event: Event) => {
     font-weight: 600;
     min-width: 100px;
     text-align: center;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 /* Loading & Not Found */
@@ -1274,6 +1485,18 @@ const handleUploadCover = async (event: Event) => {
 
     .reader-header, .reader-footer {
         padding: 0.75rem 1rem;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        justify-content: center;
+        width: 95%;
+        max-width: none;
+        bottom: 1rem; /* Adjust for footer essentially */
+        border-radius: 24px; /* Slightly smaller radius for better space usage */
+    }
+
+    .reader-header {
+        top: 1rem;
+        bottom: auto;
     }
 
     .reader-title {
@@ -1281,7 +1504,28 @@ const handleUploadCover = async (event: Event) => {
     }
 
     .reader-content {
+        padding: 0.5rem;
+    }
+
+    .single-page-reader {
         padding: 1rem;
+    }
+
+    .zoom-controls {
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        justify-content: center;
+        width: 100%;
+    }
+
+    .btn-text {
+        padding: 0.4rem 0.75rem;
+        font-size: 0.75rem;
+    }
+
+    .zoom-label {
+        min-width: 50px;
+        font-size: 0.85rem;
     }
 
     .chapter-item {

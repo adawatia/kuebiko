@@ -137,7 +137,7 @@ async def upload_chapter_images(
     db: Session = Depends(get_db),
     user: User = Depends(current_superuser)
 ):
-    """Upload or replace the images for a chapter."""
+    """Upload or replace the images for a chapter. Images are sorted by numeric filename."""
     chapter = db.query(Chapter).filter(Chapter.id == chapter_id).first()
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
@@ -145,12 +145,23 @@ async def upload_chapter_images(
     if not images:
         raise HTTPException(status_code=400, detail="No images provided")
     
+    # Helper function to extract number from filename for sorting
+    import re
+    def extract_number(filename: str) -> int:
+        """Extract the first number from filename for sorting."""
+        match = re.search(r'(\d+)', filename)
+        return int(match.group(1)) if match else 0
+    
+    # Sort images by numeric filename (e.g., 1.jpg, 2.jpg, 10.jpg, 20.jpg)
+    # This ensures proper page order regardless of upload order
+    sorted_images = sorted(images, key=lambda img: extract_number(img.filename or ""))
+    
     # Validate all images first
     valid_extensions = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
     images_data = []
     extensions = []
     
-    for img in images:
+    for img in sorted_images:
         if not img.filename:
             raise HTTPException(status_code=400, detail="Invalid image file")
         
@@ -178,7 +189,7 @@ async def upload_chapter_images(
         # Store old image URLs for cleanup
         old_image_urls = chapter.image_urls or []
         
-        # Upload new images
+        # Upload new images (already sorted by filename number)
         image_urls = storage_client.upload_chapter_images(images_data, comic.id, chapter_id, extensions)
         
         # Update chapter with new image URLs and page count
@@ -208,6 +219,7 @@ async def upload_chapter_images(
                 except:
                     pass
         raise HTTPException(status_code=500, detail=f"Failed to upload images: {str(e)}")
+
 
 
 @router.post("/batch-delete", status_code=status.HTTP_200_OK)
