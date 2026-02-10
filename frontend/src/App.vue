@@ -57,7 +57,7 @@ onMounted(() => {
         </button>
 
         <div class="nav-links" :class="{ 'active': isMenuOpen }">
-            <RouterLink to="/" @click="closeMenu">
+            <RouterLink to="/explore" @click="closeMenu">
                 <Home class="nav-icon" :size="20" /> 
                 <span class="link-text">Home</span>
             </RouterLink>

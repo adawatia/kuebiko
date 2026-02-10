@@ -22,7 +22,7 @@ const handleLogin = async () => {
     // Update store state
     authLogin();
 
-    router.push('/');
+    router.push('/explore');
   } catch (e) {
     error.value = 'Invalid credentials';
     console.error(e);

@@ -130,7 +130,7 @@ const handleSubmit = async () => {
     <div v-else-if="!isSuperuser" class="permission-denied">
         <p>You do not have permission to perform this action.</p>
         <p class="small">Contact an administrator to request access.</p>
-        <RouterLink to="/" class="btn btn-primary">Go Back</RouterLink>
+        <RouterLink to="/explore" class="btn btn-primary">Go Back</RouterLink>
     </div>
 
     <form v-else @submit.prevent="handleSubmit" class="create-form">

@@ -361,7 +361,7 @@ const handleDelete = async () => {
     if (confirm('Are you sure you want to delete this comic?')) {
         try {
             await deleteComic(comicId);
-            router.push('/');
+            router.push('/explore');
         } catch (e) {
             alert('Failed to delete comic');
         }
@@ -676,7 +676,7 @@ const handleUploadCover = async (event: Event) => {
   <div v-else class="not-found">
       <h2>404</h2>
       <p>Comic not found</p>
-      <RouterLink to="/" class="btn btn-primary">Go Home</RouterLink>
+      <RouterLink to="/explore" class="btn btn-primary">Go Home</RouterLink>
   </div>
 </template>
 
