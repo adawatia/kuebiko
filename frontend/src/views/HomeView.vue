@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, reactive } from 'vue';
 import { Search } from 'lucide-vue-next';
+import Pagination from '../components/Pagination.vue';
 import { getComics, bulkDeleteComics, type Comic, type ComicListResponse } from '../api/comics';
 import { useAuth } from '../store';
 import { API_URL } from '../api/client';
@@ -281,21 +282,12 @@ const getImageUrl = (url: string | null) => {
         </div>
     </div>
 
-    <div class="pagination" v-if="totalPages > 1">
-        <button :disabled="!hasPrevPage" @click="page--">
-            <span class="desktop-only">Previous</span>
-            <span class="mobile-only">&larr;</span>
-        </button>
-        <div class="page-info">
-            <span class="current">Page {{ page }}</span>
-            <span class="sep">/</span>
-            <span class="total">{{ totalPages }}</span>
-        </div>
-        <button :disabled="!hasNextPage" @click="page++">
-            <span class="desktop-only">Next</span>
-            <span class="mobile-only">&rarr;</span>
-        </button>
-    </div>
+    <Pagination 
+        v-if="totalPages > 1"
+        :current-page="page"
+        :total-pages="totalPages"
+        @update:current-page="page = $event"
+    />
   </div>
 </template>
 
@@ -517,47 +509,7 @@ h3 {
     flex: 1;
 }
 
-/* Pagination */
-/* Pagination - Floating Navigation */
-.pagination {
-    position: fixed;
-    bottom: 2rem;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(20, 20, 20, 0.8);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    padding: 0.8rem 2rem;
-    border-radius: 50px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 1.5rem;
-    z-index: 900;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-    margin: 0;
-}
 
-.pagination button {
-    padding: 0.8rem 1.5rem;
-    background: var(--surface-highlight);
-    border: 1px solid var(--glass-border);
-    color: white;
-    border-radius: 50px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.pagination button:hover:not(:disabled) {
-    background: rgba(255,255,255,0.1);
-    transform: translateY(-2px);
-}
-
-.pagination button:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-}
 
 /* Admin Toolbar */
 .admin-toolbar {
@@ -590,34 +542,9 @@ h3 {
     padding-left: 1rem;
 }
 
-/* Pagination Info */
-.page-info {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-weight: 500;
-}
 
-.page-info .current {
-    color: white;
-}
 
-.page-info .sep {
-    color: rgba(255, 255, 255, 0.3);
-}
 
-.page-info .total {
-    color: var(--text-muted);
-}
-
-/* Responsive Utilities */
-.desktop-only {
-    display: inline;
-}
-
-.mobile-only {
-    display: none;
-}
 
 /* Custom Checkboxes */
 .checkbox-wrapper {
@@ -738,24 +665,7 @@ h3 {
         width: 100%;
     }
 
-    .pagination {
-        bottom: 1rem;
-        padding: 0.6rem 1.2rem;
-        gap: 1rem;
-        width: 90%;
-        max-width: 400px;
-    }
 
-    .pagination button {
-        padding: 0.6rem 1rem;
-        font-size: 0.9rem;
-        flex: 1; /* Distribute space evenly */
-    }
-    
-    .pagination span {
-        font-size: 0.9rem;
-        white-space: nowrap;
-    }
 }
 
 @media (max-width: 480px) {

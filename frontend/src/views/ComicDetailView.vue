@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { BookOpen, Image as ImageIcon, Trash2, X, AlertCircle, Book, Loader2, ArrowUpDown, ChevronLeft, ChevronRight, Plus, Edit2, Check } from 'lucide-vue-next';
+import Pagination from '../components/Pagination.vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getComic, deleteComic, updateComic, type Comic } from '../api/comics';
-import { createChapter, uploadChapterImages, deleteChapter, updateChapter, type Chapter } from '../api/chapters';
+import { createChapter, uploadChapterImages, deleteChapter, updateChapter, getChapters, type Chapter } from '../api/chapters';
 import { API_URL } from '../api/client';
 import { useAuth } from '../store';
 
@@ -20,6 +21,13 @@ const comic = ref<Comic | null>(null);
 const loading = ref(true);
 const uploading = ref(false);
 const readingMode = ref(false);
+
+// Chapter Pagination State
+const chapters = ref<Chapter[]>([]);
+const chaptersPage = ref(1);
+const chaptersTotal = ref(0);
+const chaptersTotalPages = ref(1);
+const chaptersLoading = ref(false);
 
 // Reader state
 const currentImages = ref<string[]>([]);
@@ -121,17 +129,61 @@ const creatingChapter = ref(false);
 const showAddChapter = ref(false);
 const chaptersUploading = ref(new Set<number>());
 
-// Helper to calculate next chapter number
-const calculateNextChapterNumber = () => {
-    if (comic.value?.chapters && comic.value.chapters.length > 0) {
-        const numbers = comic.value.chapters.map(c => c.chapter_number);
-        const maxNum = Math.max(...numbers);
-        newChapterNumber.value = maxNum + 1;
-    } else {
-        newChapterNumber.value = 1;
+const comicId = parseInt(route.params.id as string);
+
+const loadChapters = async (page = 1) => {
+    chaptersLoading.value = true;
+    try {
+        const response = await getChapters(comicId, page, 10);
+        chapters.value = response.items;
+        chaptersTotal.value = response.total_chapters;
+        chaptersTotalPages.value = response.total_pages;
+        chaptersPage.value = response.current_page;
+    } catch (e) {
+        console.error("Failed to load chapters", e);
+    } finally {
+        chaptersLoading.value = false;
     }
 };
 
+const fetchComic = async () => {
+    try {
+        comic.value = await getComic(comicId);
+    } catch (e) {
+        console.error('Error fetching comic:', e);
+    } finally {
+        loading.value = false;
+    }
+};
+
+onMounted(async () => {
+    window.addEventListener('resize', updateWindowWidth);
+    window.addEventListener('keydown', handleKeydown);
+    
+    // Initial load
+    await fetchComic();
+    await loadChapters();
+    
+    const shouldRead = route.query.read === 'true';
+    const firstChapter = chapters.value?.[0]; // Use paginated list
+    if (shouldRead && firstChapter && firstChapter.image_urls?.length > 0) {
+        handleReadChapter(firstChapter);
+    }
+});
+
+const openFirstChapter = () => {
+    const firstChapter = comic.value?.chapters?.[0];
+    if (firstChapter) {
+        handleReadChapter(firstChapter);
+    }
+};
+
+onUnmounted(() => {
+    window.removeEventListener('resize', updateWindowWidth);
+    window.removeEventListener('keydown', handleKeydown);
+});
+
+// Update handlers to reload chapters
 const handleCreateChapter = async () => {
     if (!newChapterNumber.value || !newChapterTitle.value) {
         alert("Please enter chapter number and title.");
@@ -147,12 +199,9 @@ const handleCreateChapter = async () => {
             page_count: 0,
             is_published: true
         });
-        await fetchComic();
-        
-        // Auto-increment for next chapter
-        calculateNextChapterNumber();
+        await loadChapters(chaptersPage.value); // Reload current page
+        newChapterNumber.value = null;
         newChapterTitle.value = '';
-        
         alert("Chapter created successfully!");
     } catch (e: any) {
         console.error(e);
@@ -166,11 +215,7 @@ const handleDeleteChapter = async (chapterId: number) => {
     if (confirm("Are you sure you want to delete this chapter?")) {
         try {
             await deleteChapter(chapterId);
-            await fetchComic();
-            // Recalculate if the add form is open
-            if (showAddChapter.value) {
-                calculateNextChapterNumber();
-            }
+            await loadChapters(chaptersPage.value);
         } catch (e) {
             alert("Failed to delete chapter");
         }
@@ -195,7 +240,7 @@ const handleChapterImagesUpload = async (chapterId: number, event: Event) => {
         chaptersUploading.value.add(chapterId);
         try {
             await uploadChapterImages(chapterId, files);
-            await fetchComic();
+            await loadChapters(chaptersPage.value);
             alert(`${files.length} image(s) uploaded successfully!`);
         } catch (e) {
             console.error(e);
@@ -206,6 +251,40 @@ const handleChapterImagesUpload = async (chapterId: number, event: Event) => {
         }
     }
 };
+
+const saveChapterEdit = async () => {
+    if (!editingChapterId.value) return;
+    
+    try {
+        await updateChapter(editingChapterId.value, {
+            chapter_number: editForm.value.chapter_number,
+            title: editForm.value.title
+        });
+        await loadChapters(chaptersPage.value);
+        editingChapterId.value = null;
+    } catch (e) {
+        console.error(e);
+        alert("Failed to update chapter details");
+    }
+};
+
+// Auto-calculate next chapter number when adding
+watch(showAddChapter, (newVal) => {
+    if (newVal) {
+        let maxNum = 0;
+        // Try to find max from full list first
+        if (comic.value?.chapters && comic.value.chapters.length > 0) {
+             const numbers = comic.value.chapters.map(c => c.chapter_number);
+             maxNum = Math.max(...numbers);
+        } 
+        // Fallback to current page
+        else if (chapters.value.length > 0) {
+             const numbers = chapters.value.map(c => c.chapter_number);
+             maxNum = Math.max(...numbers);
+        }
+        newChapterNumber.value = maxNum + 1;
+    }
+});
 
 // Edit Chapter Functionality
 const editingChapterId = ref<number | null>(null);
@@ -226,29 +305,6 @@ const cancelEditChapter = () => {
     editingChapterId.value = null;
     editForm.value = { chapter_number: 0, title: '' };
 };
-
-const saveChapterEdit = async () => {
-    if (!editingChapterId.value) return;
-    
-    try {
-        await updateChapter(editingChapterId.value, {
-            chapter_number: editForm.value.chapter_number,
-            title: editForm.value.title
-        });
-        await fetchComic();
-        editingChapterId.value = null;
-    } catch (e) {
-        console.error(e);
-        alert("Failed to update chapter details");
-    }
-};
-
-// Auto-calculate next chapter number when adding
-watch(showAddChapter, (newVal) => {
-    if (newVal) {
-        calculateNextChapterNumber();
-    }
-});
 
 const handleKeydown = (e: KeyboardEvent) => {
     if (!readingMode.value) return;
@@ -300,42 +356,6 @@ const handleKeydown = (e: KeyboardEvent) => {
         closeReader();
     }
 };
-
-const comicId = parseInt(route.params.id as string);
-
-const fetchComic = async () => {
-    try {
-        comic.value = await getComic(comicId);
-    } catch (e) {
-        console.error('Error fetching comic:', e);
-    } finally {
-        loading.value = false;
-    }
-};
-
-onMounted(async () => {
-    window.addEventListener('resize', updateWindowWidth);
-    window.addEventListener('keydown', handleKeydown);
-    
-    const shouldRead = route.query.read === 'true';
-    await fetchComic();
-    
-    const firstChapter = comic.value?.chapters?.[0];
-    if (shouldRead && firstChapter && firstChapter.image_urls?.length > 0) {
-        handleReadChapter(firstChapter);
-    }
-});
-
-const openFirstChapter = () => {
-    if (comic.value?.chapters?.[0]) {
-        handleReadChapter(comic.value.chapters[0]);
-    }
-};
-
-onUnmounted(() => {
-    window.removeEventListener('resize', updateWindowWidth);
-    window.removeEventListener('keydown', handleKeydown);
-});
 
 const handleDelete = async () => {
     if (confirm('Are you sure you want to delete this comic?')) {
@@ -564,8 +584,8 @@ const handleUploadCover = async (event: Event) => {
                         </div>
                     </div>
 
-                    <div v-if="comic.chapters && comic.chapters.length > 0" class="chapter-list">
-                        <div v-for="chapter in comic.chapters" :key="chapter.id" class="chapter-item" :class="{ 'editing': editingChapterId === chapter.id }">
+                    <div v-if="chapters && chapters.length > 0" class="chapter-list" :class="{ 'loading': chaptersLoading }">
+                        <div v-for="chapter in chapters" :key="chapter.id" class="chapter-item" :class="{ 'editing': editingChapterId === chapter.id }">
                             
                             <!-- VIEW MODE -->
                             <template v-if="editingChapterId !== chapter.id">
@@ -585,7 +605,7 @@ const handleUploadCover = async (event: Event) => {
                                         <label class="btn-icon-sm" :title="chapter.image_urls?.length ? 'Replace Images' : 'Upload Images'" :class="{ 'has-images': chapter.image_urls?.length, 'uploading': chaptersUploading.has(chapter.id) }">
                                             <Loader2 v-if="chaptersUploading.has(chapter.id)" class="spinner-icon-sm" :size="14" />
                                             <ImageIcon v-else :size="14" />
-                                            <input type="file" accept="image/*" multiple @change="(e) => handleChapterImagesUpload(chapter.id, e)" :disabled="chaptersUploading.has(chapter.id)" style="display:none;" />
+                                            <input type="file" multiple accept="image/*" @change="handleChapterImagesUpload(chapter.id, $event)" :disabled="chaptersUploading.has(chapter.id)" style="display:none;" />
                                         </label>
                                         
                                         <button @click="handleDeleteChapter(chapter.id)" class="btn-icon-sm text-danger" title="Delete">
@@ -600,17 +620,20 @@ const handleUploadCover = async (event: Event) => {
                                 <div class="chapter-edit-form">
                                     <div class="edit-inputs">
                                         <div class="input-group">
-                                            <span class="input-label">Ch.</span>
+                                            <label class="input-label">Num</label>
                                             <input type="number" v-model="editForm.chapter_number" class="input-inline num-input" step="0.1" />
                                         </div>
-                                        <input type="text" v-model="editForm.title" class="input-inline text-input" placeholder="Chapter Title" />
+                                        <div class="input-group">
+                                            <label class="input-label">Title</label>
+                                            <input type="text" v-model="editForm.title" class="input-inline text-input" />
+                                        </div>
                                     </div>
                                     <div class="edit-actions">
-                                        <button @click="saveChapterEdit" class="btn-sm btn-save" title="Save">
+                                        <button @click="saveChapterEdit" class="btn-sm btn-save">
                                             <Check :size="14" /> Save
                                         </button>
-                                        <button @click="cancelEditChapter" class="btn-sm btn-cancel" title="Cancel">
-                                            <X :size="14" /> Cancel
+                                        <button @click="cancelEditChapter" class="btn-sm btn-cancel">
+                                            <X :size="14" />
                                         </button>
                                     </div>
                                 </div>
@@ -618,9 +641,18 @@ const handleUploadCover = async (event: Event) => {
 
                         </div>
                     </div>
-                    <div v-else class="no-chapters">
-                        No chapters available.
+                    <div v-else-if="!chaptersLoading" class="no-chapters">
+                        <p>No chapters available yet.</p>
                     </div>
+                    
+                    <!-- Pagination Controls -->
+                    <Pagination 
+                        v-if="chaptersTotalPages > 1"
+                        v-model:current-page="chaptersPage"
+                        :total-pages="chaptersTotalPages"
+                        :scroll-to-top="false"
+                        @change="loadChapters"
+                    />
                 </div>
                 
                 <!-- Danger Zone -->
@@ -985,6 +1017,8 @@ const handleUploadCover = async (event: Event) => {
     flex-direction: column;
     gap: 0.75rem;
 }
+
+
 
 .chapter-item {
     background: rgba(255,255,255,0.05);

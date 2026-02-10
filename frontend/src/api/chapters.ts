@@ -28,9 +28,19 @@ export interface ChapterUpdate {
     is_published?: boolean;
 }
 
-export const getChapters = async (comicId: number, skip = 0, limit = 100): Promise<Chapter[]> => {
+export interface ChapterListResponse {
+    items: Chapter[];
+    total_chapters: number;
+    total_pages: number;
+    current_page: number;
+    items_per_page: number;
+    next_page_available: boolean;
+    prev_page_available: boolean;
+}
+
+export const getChapters = async (comicId: number, page = 1, perPage = 10): Promise<ChapterListResponse> => {
     const response = await apiClient.get('/chapters/', {
-        params: { comic_id: comicId, skip, limit }
+        params: { comic_id: comicId, page, per_page: perPage }
     });
     return response.data;
 };
