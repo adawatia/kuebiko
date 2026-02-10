@@ -1,72 +1,70 @@
-"""Local Storage utilities for managing file uploads"""
+"""ImageKit Storage utilities for managing file uploads"""
 
 import os
-import shutil
 import base64
 import binascii
-import re
-import hashlib
 from typing import Optional, List
 from fastapi import HTTPException
+from imagekitio import ImageKit
 from app.core.config import settings
 
-# Define storage directory
-STORAGE_DIR = "static/comics"
-os.makedirs(STORAGE_DIR, exist_ok=True)
-
-class LocalStorage:
-    """Handle file uploads to Local Storage"""
+class ImageKitStorage:
+    """Handle file uploads to ImageKit"""
 
     def __init__(self):
-        # Ensure base directory exists
-        if not os.path.exists(STORAGE_DIR):
-            os.makedirs(STORAGE_DIR, exist_ok=True)
+        if not settings.IMAGEKIT_PRIVATE_KEY or not settings.IMAGEKIT_URL_ENDPOINT:
+            raise ValueError("ImageKit credentials not configured. Please set IMAGEKIT_PRIVATE_KEY and IMAGEKIT_URL_ENDPOINT in environment variables.")
+        
+        # ImageKit SDK v5+ only accepts private_key in constructor
+        # url_endpoint is used when generating URLs via helper methods
+        self.imagekit = ImageKit(
+            private_key=settings.IMAGEKIT_PRIVATE_KEY
+        )
+        self.public_key = settings.IMAGEKIT_PUBLIC_KEY  # Store for client-side use if needed
+        self.url_endpoint = settings.IMAGEKIT_URL_ENDPOINT  # Store for URL generation
     
-    def _get_file_url(self, file_path: str) -> str:
-        """Construct a URL for a locally stored file."""
-        # Assuming static files are mounted at /static
-        # file_path is relative to STORAGE_DIR (static/comics)
-        # So we want /static/comics/path/to/file
-        relative_path = os.path.relpath(file_path, "static")
-        return f"/static/{relative_path}"
-
     def upload_pdf(self, file_content: bytes, comic_name: str, filename: Optional[str] = None, comic_id: Optional[int] = None) -> str:
+        """Upload PDF to ImageKit (Note: ImageKit is primarily for images, but can store PDFs)"""
         if not filename:
             filename = "comic.pdf"
         elif not filename.endswith('.pdf'):
             filename = f"{filename}.pdf"
         
         folder_path = self._get_comic_folder_path(comic_id)
-        os.makedirs(folder_path, exist_ok=True)
-        
-        file_path = os.path.join(folder_path, filename)
         
         try:
-            with open(file_path, "wb") as f:
-                f.write(file_content)
+            result = self.imagekit.files.upload(
+                file=file_content,
+                file_name=filename,
+                folder=folder_path,
+                use_unique_file_name=False
+            )
             
-            return self._get_file_url(file_path)
+            return result.url
             
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to save PDF locally: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to upload PDF to ImageKit: {str(e)}")
     
     def upload_image(self, image_data: bytes, comic_name: str, extension: str = ".png", comic_id: Optional[int] = None) -> str:
+        """Upload image to ImageKit"""
         folder_path = self._get_comic_folder_path(comic_id)
-        os.makedirs(folder_path, exist_ok=True)
-        
         filename = f"cover{extension}"
-        file_path = os.path.join(folder_path, filename)
         
         try:
-            with open(file_path, "wb") as f:
-                f.write(image_data)
+            result = self.imagekit.files.upload(
+                file=image_data,
+                file_name=filename,
+                folder=folder_path,
+                use_unique_file_name=False
+            )
             
-            return self._get_file_url(file_path)
+            return result.url
             
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to save image locally: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to upload image to ImageKit: {str(e)}")
     
     def upload_base64_image(self, base64_str: str, comic_name: str, comic_id: Optional[int] = None) -> str:
+        """Upload base64 encoded image to ImageKit"""
         if "," in base64_str:
             header, encoded = base64_str.split(",", 1)
         else:
@@ -95,22 +93,24 @@ class LocalStorage:
         return self.upload_image(data, comic_name, extension, comic_id=comic_id)
     
     def upload_chapter_image(self, image_data: bytes, comic_id: int, chapter_id: int, image_index: int, extension: str = ".png") -> str:
-        """Upload a single chapter image."""
+        """Upload a single chapter image to ImageKit"""
         folder_path = self._get_chapter_folder_path(comic_id, chapter_id)
-        os.makedirs(folder_path, exist_ok=True)
         
         # Use zero-padded index for proper sorting (e.g., page_001.png, page_002.png)
         filename = f"page_{str(image_index).zfill(3)}{extension}"
-        file_path = os.path.join(folder_path, filename)
         
         try:
-            with open(file_path, "wb") as f:
-                f.write(image_data)
+            result = self.imagekit.files.upload(
+                file=image_data,
+                file_name=filename,
+                folder=folder_path,
+                use_unique_file_name=False
+            )
             
-            return self._get_file_url(file_path)
+            return result.url
             
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to save chapter image locally: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to upload chapter image to ImageKit: {str(e)}")
     
     def upload_chapter_images(self, images_data: List[bytes], comic_id: int, chapter_id: int, extensions: List[str] = None) -> List[str]:
         """Upload multiple chapter images and return their URLs."""
@@ -128,49 +128,78 @@ class LocalStorage:
         return urls
     
     def _get_chapter_folder_path(self, comic_id: int, chapter_id: int) -> str:
-        """Get the folder path for a specific chapter."""
-        return os.path.join(STORAGE_DIR, str(comic_id), f"chapter_{chapter_id}")
-
+        """Get the folder path for a specific chapter in ImageKit"""
+        return f"/comics/{comic_id}/chapter_{chapter_id}"
     
     def _get_comic_folder_path(self, comic_id: Optional[int] = None) -> str:
+        """Get the folder path for a comic in ImageKit"""
         if comic_id is not None:
-            return os.path.join(STORAGE_DIR, str(comic_id))
-        # Fallback or temp handling if needed, but we prefer ID
-        return os.path.join(STORAGE_DIR, "temp")
+            return f"/comics/{comic_id}"
+        return "/comics/temp"
 
     def delete_comic_folder(self, comic_id: int) -> bool:
-        folder_path = os.path.join(STORAGE_DIR, str(comic_id))
+        """Delete all files in a comic's folder from ImageKit"""
+        folder_path = f"/comics/{comic_id}"
+        
         try:
-            if os.path.exists(folder_path):
-                shutil.rmtree(folder_path)
+            # List all files in the folder
+            list_result = self.imagekit.files.list(
+                path=folder_path
+            )
+            
+            # Delete each file
+            for file in list_result.response_metadata.raw:
+                try:
+                    self.imagekit.files.delete(file['fileId'])
+                except Exception as e:
+                    print(f"Failed to delete file {file.get('fileId')}: {str(e)}")
+            
             return True
         except Exception as e:
-            print(f"Failed to delete comic folder locally: {str(e)}")
+            print(f"Failed to delete comic folder from ImageKit: {str(e)}")
             return False
 
     def delete_file(self, file_url: str) -> bool:
+        """Delete a file from ImageKit by its URL"""
         try:
             if not file_url:
                 return False
             
-            # URL is like /static/comics/1/cover.png
-            # We need to map it back to filesystem path: static/comics/1/cover.png
+            # Extract file_id from URL or search for the file
+            # ImageKit URLs typically contain the file path
+            # We need to get the file_id first by listing files with the path
             
-            if file_url.startswith("/static/"):
-                relative_path = file_url[len("/static/"):]
-                # Prevent directory traversal
-                if ".." in relative_path:
-                    return False
-                file_path = os.path.join("static", relative_path)
+            # Extract the path from the URL
+            # URL format: https://ik.imagekit.io/your_id/path/to/file.ext
+            if self.url_endpoint in file_url:
+                # Remove the base URL endpoint to get the path
+                path = file_url.replace(self.url_endpoint, "")
+                if path.startswith("/"):
+                    path = path[1:]  # Remove leading slash
                 
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                    return True
+                # List files to find the file_id
+                try:
+                    # Get filename from path
+                    filename = path.split('/')[-1]
+                    
+                    # Search for the file by name
+                    list_result = self.imagekit.files.list(
+                        search_query=f'name="{filename}"'
+                    )
+                    
+                    # Find matching file by full path or URL
+                    for file in list_result.response_metadata.raw:
+                        if file.get('url') == file_url or file.get('filePath') == f"/{path}":
+                            self.imagekit.files.delete(file['fileId'])
+                            return True
+                except Exception as e:
+                    print(f"Failed to find file for deletion: {str(e)}")
+            
             return False
             
         except Exception as e:
-            print(f"Failed to delete file locally: {str(e)}")
+            print(f"Failed to delete file from ImageKit: {str(e)}")
             return False
 
 # Create a singleton instance
-storage_client = LocalStorage()
+storage_client = ImageKitStorage()

@@ -18,4 +18,5 @@ dependencies = [
     "sqlalchemy>=2.0.46",
     "uvicorn>=0.40.0",
     "supabase>=2.27.3",
+    "imagekitio[aiohttp]>=5.2.0",
 ]
