@@ -165,7 +165,7 @@ def get_comic(
     db: Session = Depends(get_db),
     user: Optional[User] = Depends(fastapi_users.current_user(optional=True))
 ):
-    """Get comic details - returns full data with image URLs if authenticated, public data otherwise"""
+    """Get comic details - returns full data with signed image URLs if authenticated, public data otherwise"""
     try:
         comic = db.query(Comic).options(joinedload(Comic.chapters)).filter(Comic.id == comic_id).first()
         if not comic:
@@ -173,7 +173,22 @@ def get_comic(
         
         # Return full data if authenticated, public data otherwise
         if user:
-            return ComicOut.model_validate(comic)
+            comic_dict = ComicOut.model_validate(comic).model_dump()
+            # Sign cover image URL
+            if comic_dict.get('cover_image_url'):
+                comic_dict['cover_image_url'] = storage_client.generate_signed_url(
+                    comic_dict['cover_image_url'],
+                    expires_in=7200
+                )
+            # Sign all chapter image URLs
+            if comic_dict.get('chapters'):
+                for chapter in comic_dict['chapters']:
+                    if chapter.get('image_urls'):
+                        chapter['image_urls'] = storage_client.sign_urls_in_list(
+                            chapter['image_urls'],
+                            expires_in=7200  # 2 hours
+                        )
+            return comic_dict
         else:
             return ComicOutPublic.model_validate(comic)
     except HTTPException:

@@ -63,7 +63,7 @@ def get_chapter(
     db: Session = Depends(get_db),
     user: Optional[User] = Depends(fastapi_users.current_user(optional=True))
 ):
-    """Get chapter details - returns full data with image URLs if authenticated"""
+    """Get chapter details - returns full data with signed image URLs if authenticated"""
     try:
         chapter = db.query(Chapter).filter(Chapter.id == chapter_id).first()
         if not chapter:
@@ -71,7 +71,14 @@ def get_chapter(
         
         # Return full data if authenticated, public data otherwise
         if user:
-            return ChapterOut.model_validate(chapter)
+            chapter_dict = ChapterOut.model_validate(chapter).model_dump()
+            # Sign image URLs with 2-hour expiry
+            if chapter_dict.get('image_urls'):
+                chapter_dict['image_urls'] = storage_client.sign_urls_in_list(
+                    chapter_dict['image_urls'], 
+                    expires_in=7200  # 2 hours
+                )
+            return chapter_dict
         else:
             return ChapterOutPublic.model_validate(chapter)
     except HTTPException:
@@ -87,7 +94,7 @@ def list_chapters(
     db: Session = Depends(get_db),
     user: Optional[User] = Depends(fastapi_users.current_user(optional=True))
 ):
-    """List chapters - returns full data with image URLs if authenticated"""
+    """List chapters - returns full data with signed image URLs if authenticated"""
     try:
         query = db.query(Chapter).filter(Chapter.comic_id == comic_id).order_by(Chapter.chapter_number)
         
@@ -99,15 +106,26 @@ def list_chapters(
         
         # Return full data if authenticated, public data otherwise
         if user:
-            return ChapterListResponse(
-                items=chapters,
-                total_chapters=total_items,
-                total_pages=total_pages,
-                current_page=page,
-                items_per_page=items_per_page,
-                next_page_available=page < total_pages,
-                prev_page_available=page > 1
-            )
+            # Sign all image URLs in chapters
+            chapters_data = []
+            for chapter in chapters:
+                chapter_dict = ChapterOut.model_validate(chapter).model_dump()
+                if chapter_dict.get('image_urls'):
+                    chapter_dict['image_urls'] = storage_client.sign_urls_in_list(
+                        chapter_dict['image_urls'],
+                        expires_in=7200  # 2 hours
+                    )
+                chapters_data.append(chapter_dict)
+            
+            return {
+                "items": chapters_data,
+                "total_chapters": total_items,
+                "total_pages": total_pages,
+                "current_page": page,
+                "items_per_page": items_per_page,
+                "next_page_available": page < total_pages,
+                "prev_page_available": page > 1
+            }
         else:
             return ChapterListResponsePublic(
                 items=chapters,
@@ -226,8 +244,10 @@ async def upload_chapter_images(
                 storage_client.delete_file(old_url)
             except:
                 pass
-                
-        return {"ok": True, "image_urls": image_urls, "page_count": len(image_urls)}
+        
+        # Return signed URLs for immediate use (2 hour expiry)
+        signed_urls = storage_client.sign_urls_in_list(image_urls, expires_in=7200)
+        return {"ok": True, "image_urls": signed_urls, "page_count": len(image_urls)}
 
     except HTTPException:
         raise

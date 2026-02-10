@@ -127,6 +127,44 @@ class ImageKitStorage:
         
         return urls
     
+    def generate_signed_url(self, image_url: str, expires_in: int = 3600) -> str:
+        """
+        Generate a signed URL for secure image access.
+        
+        Args:
+            image_url: The original ImageKit URL
+            expires_in: Time in seconds until URL expires (default: 1 hour)
+        
+        Returns:
+            Signed URL that expires after the specified time
+        """
+        try:
+            # Extract the path from the full URL
+            if self.url_endpoint in image_url:
+                path = image_url.replace(self.url_endpoint, "")
+                if not path.startswith("/"):
+                    path = "/" + path
+                
+                # Generate signed URL using ImageKit helper
+                signed_url = self.imagekit.helper.build_url(
+                    url_endpoint=self.url_endpoint,
+                    src=path,
+                    signed=True,
+                    expire_seconds=expires_in
+                )
+                
+                return signed_url
+            
+            return image_url  # Return original if not an ImageKit URL
+            
+        except Exception as e:
+            print(f"Failed to generate signed URL: {str(e)}")
+            return image_url  # Fallback to original URL
+    
+    def sign_urls_in_list(self, urls: List[str], expires_in: int = 3600) -> List[str]:
+        """Generate signed URLs for a list of image URLs"""
+        return [self.generate_signed_url(url, expires_in) for url in urls if url]
+    
     def _get_chapter_folder_path(self, comic_id: int, chapter_id: int) -> str:
         """Get the folder path for a specific chapter in ImageKit"""
         return f"/comics/{comic_id}/chapter_{chapter_id}"

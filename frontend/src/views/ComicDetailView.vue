@@ -99,6 +99,17 @@ const toggleScrollMode = () => {
     scrollToTop();
 };
 
+// Anti-piracy: Prevent context menu and image saving
+const preventContextMenu = (e: Event) => {
+    e.preventDefault();
+    return false;
+};
+
+const preventDragStart = (e: Event) => {
+    e.preventDefault();
+    return false;
+};
+
 const closeReader = () => {
     readingMode.value = false;
     currentImages.value = [];
@@ -452,13 +463,18 @@ const handleUploadCover = async (event: Event) => {
         </div>
 
         <div class="reader-content scroll-container" ref="readerScroll">
+            <!-- Watermark overlay -->
+            <div class="watermark-overlay">
+                <span class="watermark-text">{{ state.user?.email || 'Licensed User' }}</span>
+            </div>
+            
             <!-- Single Page Mode -->
             <div v-if="scrollMode === 'single'" class="single-page-reader">
                 <img 
                     v-if="currentImages[currentPageIndex]"
                     :src="currentImages[currentPageIndex]" 
                     :alt="`Page ${currentPage}`"
-                    class="comic-page-image"
+                    class="comic-page-image protected-image"
                     :class="{ 
                         'fit-width': fitMode === 'width',
                         'fit-height': fitMode === 'height',
@@ -466,6 +482,8 @@ const handleUploadCover = async (event: Event) => {
                     }"
                     :style="fitMode === 'none' ? { transform: `scale(${zoomLevel})` } : {}"
                     loading="eager"
+                    @contextmenu="preventContextMenu"
+                    @dragstart="preventDragStart"
                 />
             </div>
 
@@ -476,13 +494,15 @@ const handleUploadCover = async (event: Event) => {
                     :key="index"
                     :src="imageUrl" 
                     :alt="`Page ${index + 1}`"
-                    class="comic-page-image vertical-image"
+                    class="comic-page-image vertical-image protected-image"
                     :class="{ 
                         'fit-width': fitMode === 'width',
                         'manual-zoom': fitMode === 'none'
                     }"
                     :style="fitMode === 'none' ? { transform: `scale(${zoomLevel})`, transformOrigin: 'top center' } : {}"
                     :loading="index < 3 ? 'eager' : 'lazy'"
+                    @contextmenu="preventContextMenu"
+                    @dragstart="preventDragStart"
                 />
             </div>
         </div>
@@ -1328,6 +1348,28 @@ const handleUploadCover = async (event: Event) => {
     position: relative;
 }
 
+/* Watermark overlay */
+.watermark-overlay {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-45deg);
+    pointer-events: none;
+    z-index: 50;
+    opacity: 0.08;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.watermark-text {
+    font-size: 3rem;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+    white-space: nowrap;
+    letter-spacing: 0.5rem;
+}
+
 .scroll-container {
     scrollbar-width: thin;
     scrollbar-color: rgba(255,255,255,0.3) transparent;
@@ -1374,6 +1416,20 @@ const handleUploadCover = async (event: Event) => {
 
 .comic-page-image:active {
     cursor: grabbing;
+}
+
+/* Anti-piracy protection for images */
+.protected-image {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    -webkit-touch-callout: none;
+    pointer-events: auto;
+    -webkit-user-drag: none;
+    -khtml-user-drag: none;
+    -moz-user-drag: none;
+    -o-user-drag: none;
 }
 
 /* Fit modes */
