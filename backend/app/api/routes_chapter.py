@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from sqlalchemy.orm import Session
 from app.db import SessionLocal
 from app.models import Chapter, Comic, User
-from app.schemas import ChapterCreate, ChapterUpdate, ChapterOut, ChapterListResponse
+from app.schemas import ChapterCreate, ChapterUpdate, ChapterOut, ChapterListResponse, ChapterOutPublic, ChapterListResponsePublic
 from app.storage import storage_client
-from app.users import current_active_user, current_superuser
-from typing import List
+from app.users import current_active_user, current_superuser, fastapi_users
+from typing import List, Optional
 from datetime import datetime
 import math
 import os
@@ -57,27 +57,37 @@ def create_chapter(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to create chapter: {str(e)}")
 
-@router.get("/{chapter_id}", response_model=ChapterOut)
-def get_chapter(chapter_id: int, db: Session = Depends(get_db), user: User = Depends(current_active_user)):
+@router.get("/{chapter_id}")
+def get_chapter(
+    chapter_id: int,
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(fastapi_users.current_user(optional=True))
+):
+    """Get chapter details - returns full data with image URLs if authenticated"""
     try:
         chapter = db.query(Chapter).filter(Chapter.id == chapter_id).first()
         if not chapter:
             raise HTTPException(status_code=404, detail="Chapter not found")
-        return chapter
+        
+        # Return full data if authenticated, public data otherwise
+        if user:
+            return ChapterOut.model_validate(chapter)
+        else:
+            return ChapterOutPublic.model_validate(chapter)
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch chapter: {str(e)}")
 
-@router.get("/", response_model=ChapterListResponse)
+@router.get("/")
 def list_chapters(
     comic_id: int = Query(..., description="Filter by comic ID"),
     page: int = Query(1, ge=1, description="Page number"),
     items_per_page: int = Query(10, ge=1, le=100, alias="per_page", description="Items per page"),
     db: Session = Depends(get_db),
-    user: User = Depends(current_active_user)
+    user: Optional[User] = Depends(fastapi_users.current_user(optional=True))
 ):
-    """List chapters for a specific comic with pagination."""
+    """List chapters - returns full data with image URLs if authenticated"""
     try:
         query = db.query(Chapter).filter(Chapter.comic_id == comic_id).order_by(Chapter.chapter_number)
         
@@ -87,15 +97,27 @@ def list_chapters(
         offset = (page - 1) * items_per_page
         chapters = query.offset(offset).limit(items_per_page).all()
         
-        return ChapterListResponse(
-            items=chapters,
-            total_chapters=total_items,
-            total_pages=total_pages,
-            current_page=page,
-            items_per_page=items_per_page,
-            next_page_available=page < total_pages,
-            prev_page_available=page > 1
-        )
+        # Return full data if authenticated, public data otherwise
+        if user:
+            return ChapterListResponse(
+                items=chapters,
+                total_chapters=total_items,
+                total_pages=total_pages,
+                current_page=page,
+                items_per_page=items_per_page,
+                next_page_available=page < total_pages,
+                prev_page_available=page > 1
+            )
+        else:
+            return ChapterListResponsePublic(
+                items=chapters,
+                total_chapters=total_items,
+                total_pages=total_pages,
+                current_page=page,
+                items_per_page=items_per_page,
+                next_page_available=page < total_pages,
+                prev_page_available=page > 1
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch chapters: {str(e)}")
 

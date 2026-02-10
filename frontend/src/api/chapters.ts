@@ -5,7 +5,7 @@ export interface Chapter {
     comic_id: number;
     chapter_number: number;
     title: string;
-    image_urls: string[];
+    image_urls?: string[]; // Optional - only present for authenticated users
     page_count: number | null;
     is_published: boolean;
     published_at: string | null;

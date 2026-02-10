@@ -16,7 +16,7 @@ const getAssetUrl = (url: string | null) => {
 
 const route = useRoute();
 const router = useRouter();
-const { isSuperuser } = useAuth();
+const { isSuperuser, state } = useAuth();
 const comic = ref<Comic | null>(null);
 const loading = ref(true);
 const uploading = ref(false);
@@ -108,7 +108,20 @@ const closeReader = () => {
 };
 
 const handleReadChapter = (chapter: Chapter) => {
+    // Check if user is authenticated before allowing reading
+    if (!state.isAuthenticated) {
+        // Store intended destination for redirect after login
+        const returnPath = `/comic/${route.params.id}`;
+        router.push({ 
+            name: 'login', 
+            query: { redirect: returnPath }
+        });
+        return;
+    }
+    
     try {
+        // Additional check: if image_urls is missing, it means the API didn't return them
+        // This shouldn't happen for authenticated users, but let's be safe
         if (!chapter.image_urls || chapter.image_urls.length === 0) {
             alert('No images available for this chapter.');
             return;

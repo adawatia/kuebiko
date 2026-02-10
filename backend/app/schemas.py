@@ -33,7 +33,17 @@ class ChapterUpdate(BaseModel):
     is_published: Optional[bool] = None
     published_at: Optional[datetime] = None
 
+class ChapterOutPublic(ChapterBase):
+    """Public chapter schema - no image URLs for unauthenticated users"""
+    id: int
+    comic_id: int
+    created_at: datetime
+    updated_at: datetime
+    
+    model_config = ConfigDict(from_attributes=True)
+
 class ChapterOut(ChapterBase):
+    """Full chapter schema with image URLs - requires authentication"""
     id: int
     comic_id: int
     image_urls: List[str] = Field(default_factory=list, description="Array of image URLs for the chapter")
@@ -80,8 +90,19 @@ class ComicUpdate(BaseModel):
     cover_image: Optional[str] = None
     cover_image_url: Optional[str] = None
 
+class ComicOutPublic(ComicBase):
+    """Public comic schema - chapters without image URLs"""
+    id: int = Field(..., description="Comic ID")
+    cover_image_url: Optional[str] = Field(None, description="Storage URL for cover image")
+    created_at: datetime
+    updated_at: datetime
+    published_at: Optional[datetime] = None
+    chapters: List[ChapterOutPublic] = []
+    
+    model_config = ConfigDict(from_attributes=True)
+
 class ComicOut(ComicBase):
-    """Schema for comic output"""
+    """Full comic schema with chapter image URLs - requires authentication"""
     id: int = Field(..., description="Comic ID")
     cover_image_url: Optional[str] = Field(None, description="Storage URL for cover image")
     created_at: datetime
@@ -101,9 +122,29 @@ class ComicListResponse(BaseModel):
     next_page_available: bool = Field(..., description="True if there is a next page")
     prev_page_available: bool = Field(..., description="True if there is a previous page")
 
+class ComicListResponsePublic(BaseModel):
+    """Paginated response for comic list - public version"""
+    items: List[ComicOutPublic]
+    total_comics: int = Field(..., description="Total number of comics available")
+    total_pages: int = Field(..., description="Total number of pages")
+    current_page: int = Field(..., description="Current page number")
+    items_per_page: int = Field(..., description="Number of items per page")
+    next_page_available: bool = Field(..., description="True if there is a next page")
+    prev_page_available: bool = Field(..., description="True if there is a previous page")
+
 class ChapterListResponse(BaseModel):
     """Paginated response for chapter list"""
     items: List[ChapterOut]
+    total_chapters: int = Field(..., description="Total number of chapters available")
+    total_pages: int = Field(..., description="Total number of pages")
+    current_page: int = Field(..., description="Current page number")
+    items_per_page: int = Field(..., description="Number of items per page")
+    next_page_available: bool = Field(..., description="True if there is a next page")
+    prev_page_available: bool = Field(..., description="True if there is a previous page")
+
+class ChapterListResponsePublic(BaseModel):
+    """Paginated response for chapter list - public version"""
+    items: List[ChapterOutPublic]
     total_chapters: int = Field(..., description="Total number of chapters available")
     total_pages: int = Field(..., description="Total number of pages")
     current_page: int = Field(..., description="Current page number")

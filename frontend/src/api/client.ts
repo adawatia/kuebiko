@@ -26,13 +26,9 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      // Token expired or invalid
+      // Token expired or invalid - clear it but don't redirect
+      // Users can browse without auth, only specific actions need login
       localStorage.removeItem('token');
-      // Only redirect if not already on login/register
-      const currentPath = router.currentRoute.value.path;
-      if (currentPath !== '/login' && currentPath !== '/register') {
-          router.push('/login');
-      }
     }
     return Promise.reject(error);
   }

@@ -16,8 +16,7 @@ const router = createRouter({
     {
       path: '/explore',
       name: 'home',
-      component: HomeView,
-      meta: { requiresAuth: true }
+      component: HomeView
     },
     {
       path: '/login',
@@ -38,8 +37,7 @@ const router = createRouter({
     {
         path: '/comic/:id',
         name: 'comic-detail',
-        component: ComicDetailView,
-        meta: { requiresAuth: true }
+        component: ComicDetailView
     }
   ],
 });

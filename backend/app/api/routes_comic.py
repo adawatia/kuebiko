@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
 from app.db import SessionLocal
 from app.models import Comic, ComicStatus
-from app.schemas import ComicCreate, ComicUpdate, ComicOut, ComicListResponse
+from app.schemas import ComicCreate, ComicUpdate, ComicOut, ComicListResponse, ComicOutPublic, ComicListResponsePublic
 from app.storage import storage_client
-from typing import List, Optional
+from typing import List, Optional, Union
 import math
 
 router = APIRouter(prefix="/comics", tags=["comics"])
@@ -17,7 +17,7 @@ def get_db():
     finally:
         db.close()
 
-from app.users import current_active_user, current_superuser
+from app.users import current_active_user, current_superuser, fastapi_users
 from app.models import User
 
 @router.post("/", response_model=ComicOut, status_code=status.HTTP_201_CREATED)
@@ -92,15 +92,15 @@ def create_comic(
             db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to create comic: {str(e)}")
 
-@router.get("/", response_model=ComicListResponse)
+@router.get("/", response_model=ComicListResponsePublic)
 def list_comics(
     page: int = Query(1, ge=1, description="Page number"),
     items_per_page: int = Query(10, ge=1, le=100, alias="per_page", description="Items per page"),
     genres: Optional[List[str]] = Query(None, description="Filter by genres (OR logic)"),
     search: Optional[str] = Query(None, description="Search title or description"),
-    db: Session = Depends(get_db),
-    user: User = Depends(current_active_user)
+    db: Session = Depends(get_db)
 ):
+    """List comics - returns public data without image URLs"""
     try:
         query = db.query(Comic)
         
@@ -133,7 +133,7 @@ def list_comics(
             # comic.genres is already a list from JSONB column
             genre_list = comic.genres if comic.genres else []
             
-            items.append(ComicOut(
+            items.append(ComicOutPublic(
                 id=comic.id,
                 title=comic.title,
                 description=comic.description,
@@ -147,7 +147,7 @@ def list_comics(
                 chapters=[] # List view doesn't need chapters or expensive join
             ))
             
-        return ComicListResponse(
+        return ComicListResponsePublic(
             items=items,
             total_comics=total_items,
             total_pages=total_pages,
@@ -159,13 +159,23 @@ def list_comics(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch comics: {str(e)}")
 
-@router.get("/{comic_id}", response_model=ComicOut)
-def get_comic(comic_id: int, db: Session = Depends(get_db), user: User = Depends(current_active_user)):
+@router.get("/{comic_id}")
+def get_comic(
+    comic_id: int, 
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(fastapi_users.current_user(optional=True))
+):
+    """Get comic details - returns full data with image URLs if authenticated, public data otherwise"""
     try:
         comic = db.query(Comic).options(joinedload(Comic.chapters)).filter(Comic.id == comic_id).first()
         if not comic:
             raise HTTPException(status_code=404, detail="Comic not found")
-        return comic
+        
+        # Return full data if authenticated, public data otherwise
+        if user:
+            return ComicOut.model_validate(comic)
+        else:
+            return ComicOutPublic.model_validate(comic)
     except HTTPException:
         raise
     except Exception as e:

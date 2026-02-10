@@ -17,17 +17,12 @@ const { state } = useAuth();
       <p class="subtitle">Your personal comic library, redefined.</p>
       
       <div class="cta-group">
-        <template v-if="state.isAuthenticated">
-          <RouterLink to="/explore" class="btn btn-primary btn-lg">
-            Explore Comics
-          </RouterLink>
-        </template>
-        <template v-else>
-          <RouterLink to="/login" class="btn btn-primary btn-lg">
+        <RouterLink to="/explore" class="btn btn-primary btn-lg">
+          Explore Comics
+        </RouterLink>
+        <template v-if="!state.isAuthenticated">
+          <RouterLink to="/login" class="btn btn-secondary btn-lg">
             Login
-          </RouterLink>
-          <RouterLink to="/register" class="btn btn-secondary btn-lg">
-            Register
           </RouterLink>
         </template>
       </div>

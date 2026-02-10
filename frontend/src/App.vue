@@ -40,7 +40,7 @@ onMounted(() => {
 
 <template>
   <div class="app-container">
-    <header v-if="state.isAuthenticated">
+    <header v-if="$route.path !== '/'">
       <nav>
         <div class="logo">
             <img src="./assets/logo.svg" alt="Kuebiko Logo" class="logo-img" />
@@ -59,22 +59,34 @@ onMounted(() => {
         <div class="nav-links" :class="{ 'active': isMenuOpen }">
             <RouterLink to="/explore" @click="closeMenu">
                 <Home class="nav-icon" :size="20" /> 
-                <span class="link-text">Home</span>
+                <span class="link-text">Explore</span>
             </RouterLink>
             <!-- Only show Upload if superuser -->
-            <RouterLink v-if="isSuperuser" to="/create" @click="closeMenu">
+            <RouterLink v-if="state.isAuthenticated && isSuperuser" to="/create" @click="closeMenu">
                 <Upload class="nav-icon" :size="20" /> 
                 <span class="link-text">Upload Comic</span>
             </RouterLink>
-            <div class="user-info" v-if="state.user">
-                <User :size="18" />
-                <span class="user-email">{{ state.user.email }}</span>
-                <span v-if="isSuperuser" class="badge">Admin</span>
-            </div>
-            <button @click="handleLogout" class="logout-btn">
-                <LogOut :size="18" /> 
-                <span>Logout</span>
-            </button>
+            
+            <!-- Show user info if authenticated -->
+            <template v-if="state.isAuthenticated">
+                <div class="user-info" v-if="state.user">
+                    <User :size="18" />
+                    <span class="user-email">{{ state.user.email }}</span>
+                    <span v-if="isSuperuser" class="badge">Admin</span>
+                </div>
+                <button @click="handleLogout" class="logout-btn">
+                    <LogOut :size="18" /> 
+                    <span>Logout</span>
+                </button>
+            </template>
+            
+            <!-- Show login/register if not authenticated -->
+            <template v-else>
+                <RouterLink to="/login" @click="closeMenu" class="login-link">
+                    <User class="nav-icon" :size="20" />
+                    <span class="link-text">Login</span>
+                </RouterLink>
+            </template>
         </div>
       </nav>
     </header>
@@ -180,7 +192,8 @@ nav {
     align-items: center;
 }
 
-.nav-links a {
+.nav-links a,
+.login-link {
     color: #94a3b8;
     text-decoration: none;
     transition: all 0.3s ease;
@@ -192,7 +205,8 @@ nav {
     border-radius: 8px;
 }
 
-.nav-links a:hover, .nav-links a.router-link-active {
+.nav-links a:hover, .nav-links a.router-link-active,
+.login-link:hover {
     color: #fff;
     background: rgba(255, 255, 255, 0.05);
 }
