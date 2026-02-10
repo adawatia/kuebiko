@@ -627,13 +627,13 @@ h3 {
     .header-section {
         flex-direction: column;
         align-items: flex-start;
-        padding: 0 1rem;
-        margin-bottom: 2.5rem;
-        gap: 1.5rem;
+        padding: 0;
+        margin-bottom: 2rem;
+        gap: 1.25rem;
     }
 
     .header-title h1 {
-        font-size: 2.5rem;
+        font-size: 2.2rem;
     }
 
     .search-wrapper {
@@ -641,15 +641,15 @@ h3 {
     }
 
     .grid {
-        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-        gap: 1.5rem;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 1.25rem;
     }
 
     .admin-toolbar {
         flex-direction: column;
-        gap: 1rem;
+        gap: 0.85rem;
         align-items: stretch;
-        padding: 1rem;
+        padding: 0.85rem;
     }
 
     .admin-toolbar > * {
@@ -658,7 +658,7 @@ h3 {
 
     .btn-group {
         flex-direction: column;
-        gap: 0.5rem;
+        gap: 0.6rem;
     }
 
     .btn-group .btn {
@@ -669,20 +669,25 @@ h3 {
 }
 
 @media (max-width: 480px) {
-    h1 {
-        font-size: 1.75rem;
+    .header-title h1 {
+        font-size: 1.8rem;
     }
 
     .card-content {
-        padding: 1.2rem;
+        padding: 1rem;
     }
 
     .card-header h3 {
-        font-size: 1.1rem;
+        font-size: 1rem;
     }
 
     .description {
-        font-size: 0.85rem;
+        font-size: 0.8rem;
+    }
+
+    .genre-tag {
+        font-size: 0.65rem;
+        padding: 0.25rem 0.7rem;
     }
 }
 
@@ -690,7 +695,7 @@ h3 {
 /* Card Metadata Styling */
 .header-main {
     flex: 1;
-    min-width: 0; 
+    min-width: 0;
     margin-right: 0.5rem;
 }
 

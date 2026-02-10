@@ -324,13 +324,13 @@ main {
     }
 
     .nav-links a {
-        font-size: 1.8rem;
-        font-weight: 700;
+        font-size: 1.4rem;
+        font-weight: 600;
         color: #fff;
         opacity: 0;
         transform: translateY(20px);
         transition: all 0.3s ease;
-        padding: 1rem 2rem;
+        padding: 0.85rem 1.5rem;
         background: transparent;
     }
 
@@ -364,22 +364,22 @@ main {
         flex-direction: column;
         background: linear-gradient(145deg, rgba(30, 41, 59, 0.4), rgba(15, 23, 42, 0.6));
         border: 1px solid rgba(255, 255, 255, 0.08);
-        padding: 2rem;
-        border-radius: 24px;
+        padding: 1.5rem;
+        border-radius: 20px;
         opacity: 0;
         transform: translateY(10px);
         transition: all 0.3s ease;
-        margin-top: 2rem;
-        min-width: 260px;
+        margin-top: 1.5rem;
+        min-width: 240px;
         justify-content: center;
         box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
     }
 
     .user-info svg {
-        width: 48px;
-        height: 48px;
+        width: 40px;
+        height: 40px;
         background: rgba(255, 255, 255, 0.1);
-        padding: 10px;
+        padding: 8px;
         border-radius: 50%;
         margin-bottom: 0.5rem;
         color: #e2e8f0;
@@ -387,7 +387,7 @@ main {
     }
 
     .user-email {
-        font-size: 1.1rem;
+        font-size: 1rem;
         font-weight: 600;
         color: #f8fafc;
         margin: 0.5rem 0;

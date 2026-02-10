@@ -648,9 +648,10 @@ const handleUploadCover = async (event: Event) => {
                     <!-- Pagination Controls -->
                     <Pagination 
                         v-if="chaptersTotalPages > 1"
-                        v-model:current-page="chaptersPage"
+                        :current-page="chaptersPage"
                         :total-pages="chaptersTotalPages"
                         :scroll-to-top="false"
+                        @update:current-page="chaptersPage = $event"
                         @change="loadChapters"
                     />
                 </div>
@@ -1518,14 +1519,17 @@ const handleUploadCover = async (event: Event) => {
     }
 
     .reader-header, .reader-footer {
-        padding: 0.75rem 1rem;
+        padding: 0.6rem 0.8rem;
         flex-wrap: wrap;
-        gap: 0.75rem;
+        gap: 0.5rem;
         justify-content: center;
         width: 95%;
         max-width: none;
-        bottom: 1rem; /* Adjust for footer essentially */
-        border-radius: 24px; /* Slightly smaller radius for better space usage */
+        border-radius: 20px;
+    }
+    
+    .reader-footer {
+        bottom: 1rem;
     }
 
     .reader-header {
@@ -1534,7 +1538,12 @@ const handleUploadCover = async (event: Event) => {
     }
 
     .reader-title {
-        font-size: 1rem;
+        font-size: 0.9rem;
+        flex: 1;
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .reader-content {
@@ -1546,31 +1555,85 @@ const handleUploadCover = async (event: Event) => {
     }
 
     .zoom-controls {
-        gap: 0.5rem;
+        gap: 0.4rem;
         flex-wrap: wrap;
         justify-content: center;
         width: 100%;
     }
+    
+    .pagination-controls {
+        gap: 0.75rem;
+    }
 
     .btn-text {
-        padding: 0.4rem 0.75rem;
-        font-size: 0.75rem;
+        padding: 0.4rem 0.6rem;
+        font-size: 0.7rem;
+    }
+    
+    .btn-icon {
+        padding: 0.5rem;
     }
 
     .zoom-label {
-        min-width: 50px;
+        min-width: 45px;
+        font-size: 0.8rem;
+    }
+    
+    .page-counter {
+        min-width: 80px;
         font-size: 0.85rem;
     }
 
     .chapter-item {
         flex-direction: column;
         align-items: flex-start;
-        gap: 1rem;
+        gap: 0.75rem;
+        padding: 0.85rem;
+    }
+    
+    .chapter-info {
+        margin-right: 0;
+        gap: 0.5rem;
+        flex-wrap: wrap;
     }
 
     .chapter-actions {
         width: 100%;
-        justify-content: space-between;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+    }
+    
+    .admin-chapter-actions {
+        flex: 1;
+        justify-content: flex-end;
+    }
+}
+
+@media (max-width: 480px) {
+    .content-container {
+        padding: 1.5rem 0.75rem;
+    }
+    
+    .comic-title {
+        font-size: 1.75rem;
+    }
+    
+    .left-col {
+        max-width: 100%;
+    }
+    
+    .btn-sm {
+        padding: 0.4rem 0.75rem;
+        font-size: 0.8rem;
+    }
+    
+    .input-inline {
+        padding: 0.5rem;
+        font-size: 0.85rem;
+    }
+    
+    .num-input {
+        width: 70px;
     }
 }
 </style>

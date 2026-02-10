@@ -187,23 +187,12 @@ const visiblePages = computed(() => {
 }
 
 .page-btn.active {
-    background: var(--surface-highlight); /* Active bg */
-    border-color: var(--glass-border);
-    color: var(--text); /* Active text color */
+    background: var(--surface-highlight);
+    border-color: var(--primary);
+    color: var(--primary);
     font-weight: 700;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    box-shadow: 0 4px 12px rgba(138, 180, 248, 0.3);
     transform: scale(1.05);
-}
-
-/* Specific glowing effect for active state if desired */
-.page-btn.active::after {
-    content: '';
-    position: absolute;
-    inset: -2px;
-    border-radius: 14px;
-    background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
-    z-index: -1;
-    opacity: 0.5;
 }
 
 .ellipsis {
