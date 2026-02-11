@@ -436,6 +436,60 @@ const handleUploadCover = async (event: Event) => {
     }
 };
 
+// Comic Details Editing
+const isEditingComic = ref(false);
+const editComicForm = ref({
+    title: '',
+    author: '',
+    status: 'ongoing',
+    description: '',
+    genres: [] as string[]
+});
+
+const statusOptions = [
+    { value: 'ongoing', label: 'Ongoing' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'hiatus', label: 'Hiatus' }
+];
+
+const availableGenres = [
+    'Action', 'Adventure', 'Fantasy', 'Horror', 'Romance', 'Sci-Fi', 'Mystery', 'Slice of Life', 'Other'
+];
+
+const startEditingComic = () => {
+    if (!comic.value) return;
+    editComicForm.value = {
+        title: comic.value.title,
+        author: comic.value.author,
+        status: comic.value.status,
+        description: comic.value.description || '',
+        genres: comic.value.genres ? [...comic.value.genres] : []
+    };
+    isEditingComic.value = true;
+};
+
+const cancelEditComic = () => {
+    isEditingComic.value = false;
+};
+
+const saveComicDetails = async () => {
+    try {
+        await updateComic(comicId, {
+            title: editComicForm.value.title,
+            author: editComicForm.value.author,
+            status: editComicForm.value.status,
+            description: editComicForm.value.description,
+            genres: editComicForm.value.genres
+        });
+        
+        await fetchComic();
+        isEditingComic.value = false;
+    } catch (e) {
+        console.error('Failed to update comic:', e);
+        alert('Failed to update comic details');
+    }
+};
+
 </script>
 
 <template>
@@ -579,22 +633,73 @@ const handleUploadCover = async (event: Event) => {
                 </div>
             </div>
 
-            <!-- Right Column: Details -->
             <div class="right-col">
-                <div class="header-info">
-                    <h1 class="comic-title">{{ comic.title }}</h1>
-                    <div class="meta-row">
-                        <span class="author">By {{ comic.author }}</span>
-                        <span class="status-badge" :class="comic.status.toLowerCase()">{{ comic.status }}</span>
+                <!-- VIEW MODE -->
+                <div v-if="!isEditingComic">
+                    <div class="header-info">
+                        <div class="title-row">
+                            <h1 class="comic-title">{{ comic.title }}</h1>
+                            <button v-if="isSuperuser" @click="startEditingComic" class="btn-icon-sm edit-comic-btn" title="Edit Details">
+                                <Edit2 :size="18" />
+                            </button>
+                        </div>
+                        <div class="meta-row">
+                            <span class="author">By {{ comic.author }}</span>
+                            <span class="status-badge" :class="comic.status.toLowerCase()">{{ comic.status }}</span>
+                        </div>
+                        <div class="genres">
+                            <span v-for="g in comic.genres" :key="g" class="genre-tag">{{ g }}</span>
+                        </div>
                     </div>
-                    <div class="genres">
-                        <span v-for="g in comic.genres" :key="g" class="genre-tag">{{ g }}</span>
+
+                    <div class="description-box">
+                        <h3>Synopsis</h3>
+                        <p>{{ comic.description }}</p>
                     </div>
                 </div>
 
-                <div class="description-box">
-                    <h3>Synopsis</h3>
-                    <p>{{ comic.description }}</p>
+                <!-- EDIT MODE -->
+                <div v-else class="comic-edit-form">
+                    <div class="form-group">
+                        <label>Title</label>
+                        <input type="text" v-model="editComicForm.title" class="input-field" />
+                    </div>
+                    
+                    <div class="form-row-split">
+                        <div class="form-group">
+                            <label>Author</label>
+                            <input type="text" v-model="editComicForm.author" class="input-field" />
+                        </div>
+                        <div class="form-group">
+                            <label>Status</label>
+                            <div class="status-select">
+                                <label v-for="opt in statusOptions" :key="opt.value" class="radio-label">
+                                    <input type="radio" :value="opt.value" v-model="editComicForm.status">
+                                    <span class="custom-radio">{{ opt.label }}</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Genres</label>
+                        <div class="genre-select">
+                            <label v-for="genre in availableGenres" :key="genre" class="checkbox-label">
+                                <input type="checkbox" :value="genre" v-model="editComicForm.genres">
+                                <span class="custom-checkbox">{{ genre }}</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Synopsis</label>
+                        <textarea v-model="editComicForm.description" class="input-field textarea-field" rows="6"></textarea>
+                    </div>
+
+                    <div class="edit-actions-main">
+                        <button @click="saveComicDetails" class="btn btn-primary">Save Changes</button>
+                        <button @click="cancelEditComic" class="btn btn-secondary">Cancel</button>
+                    </div>
                 </div>
 
                 <!-- Chapters Section -->
@@ -1600,7 +1705,113 @@ const handleUploadCover = async (event: Event) => {
     .reader-footer {
         bottom: 1rem;
     }
+    
+    .zoom-controls {
+        gap: 0.5rem;
+    }
+}
 
+/* Edit Form Styles */
+.title-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.edit-comic-btn {
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+
+.title-row:hover .edit-comic-btn {
+    opacity: 1;
+}
+
+.comic-edit-form {
+    background: rgba(255,255,255,0.05);
+    padding: 2rem;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.1);
+    margin-bottom: 2rem;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.form-group label {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.input-field {
+    background: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    color: white;
+    font-size: 1rem;
+    transition: border-color 0.2s;
+}
+
+.input-field:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.form-row-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+.select-field {
+    width: 100%;
+    cursor: pointer;
+    appearance: none;
+}
+
+.select-field option {
+    background: #1a1a2e;
+    color: white;
+}
+
+.edit-actions-main {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.btn-primary {
+    background: var(--primary);
+    color: #000;
+    font-weight: 600;
+    padding: 0.8rem 1.5rem;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+}
+
+.btn-secondary {
+    background: rgba(255,255,255,0.1);
+    color: white;
+    font-weight: 600;
+    padding: 0.8rem 1.5rem;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+}
+
+.btn-secondary:hover {
+    background: rgba(255,255,255,0.15);
+}
+
+@media (max-width: 640px) {
     .reader-header {
         top: 1rem;
         bottom: auto;
@@ -1704,5 +1915,95 @@ const handleUploadCover = async (event: Event) => {
     .num-input {
         width: 70px;
     }
+}
+
+/* Status Radio Buttons */
+.status-select {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.radio-label {
+    position: relative;
+    cursor: pointer;
+}
+
+.radio-label input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.custom-radio {
+    display: inline-block;
+    padding: 0.6rem 1.2rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50px;
+    font-size: 0.9rem;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    color: #aaa;
+    user-select: none;
+}
+
+.radio-label:hover .custom-radio {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #fff;
+}
+
+.radio-label input:checked + .custom-radio {
+    background: var(--primary);
+    color: #121212;
+    border-color: var(--primary);
+    box-shadow: 0 4px 15px rgba(138, 180, 248, 0.4);
+    font-weight: 600;
+}
+
+/* Chips for Genres */
+.genre-select {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.checkbox-label {
+    position: relative;
+    cursor: pointer;
+}
+
+.checkbox-label input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.custom-checkbox {
+    display: inline-block;
+    padding: 0.6rem 1.2rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50px;
+    font-size: 0.9rem;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    color: #aaa;
+    user-select: none;
+}
+
+.checkbox-label:hover .custom-checkbox {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #fff;
+}
+
+.checkbox-label input:checked + .custom-checkbox {
+    background: var(--primary);
+    color: #121212;
+    border-color: var(--primary);
+    box-shadow: 0 4px 15px rgba(138, 180, 248, 0.4);
+    font-weight: 600;
 }
 </style>
