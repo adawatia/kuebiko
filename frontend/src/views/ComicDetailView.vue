@@ -452,12 +452,24 @@ const statusOptions = [
     { value: 'hiatus', label: 'Hiatus' }
 ];
 
-const availableGenres = [
+const availableGenres = ref([
     'Action', 'Adventure', 'Fantasy', 'Horror', 'Romance', 'Sci-Fi', 'Mystery', 'Slice of Life', 'Other'
-];
+]);
+
+const savingDetails = ref(false);
 
 const startEditingComic = () => {
     if (!comic.value) return;
+    
+    // Add any existing comic genres to available list if missing
+    if (comic.value.genres) {
+        comic.value.genres.forEach(g => {
+            if (!availableGenres.value.includes(g)) {
+                availableGenres.value.push(g);
+            }
+        });
+    }
+
     editComicForm.value = {
         title: comic.value.title,
         author: comic.value.author,
@@ -473,6 +485,16 @@ const cancelEditComic = () => {
 };
 
 const saveComicDetails = async () => {
+    if (!editComicForm.value.title.trim()) {
+        alert("Title is required");
+        return;
+    }
+    if (!editComicForm.value.author.trim()) {
+        alert("Author is required");
+        return;
+    }
+
+    savingDetails.value = true;
     try {
         await updateComic(comicId, {
             title: editComicForm.value.title,
@@ -484,9 +506,12 @@ const saveComicDetails = async () => {
         
         await fetchComic();
         isEditingComic.value = false;
-    } catch (e) {
+    } catch (e: any) {
         console.error('Failed to update comic:', e);
-        alert('Failed to update comic details');
+        const errorMsg = e?.response?.data?.detail || 'Failed to update comic details';
+        alert(errorMsg);
+    } finally {
+        savingDetails.value = false;
     }
 };
 
@@ -697,8 +722,11 @@ const saveComicDetails = async () => {
                     </div>
 
                     <div class="edit-actions-main">
-                        <button @click="saveComicDetails" class="btn btn-primary">Save Changes</button>
-                        <button @click="cancelEditComic" class="btn btn-secondary">Cancel</button>
+                        <button @click="saveComicDetails" :disabled="savingDetails" class="btn btn-primary">
+                            <Loader2 v-if="savingDetails" class="spinner-icon-sm" :size="16" />
+                            {{ savingDetails ? 'Saving...' : 'Save Changes' }}
+                        </button>
+                        <button @click="cancelEditComic" :disabled="savingDetails" class="btn btn-secondary">Cancel</button>
                     </div>
                 </div>
 
