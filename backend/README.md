@@ -29,11 +29,14 @@ Create a `.env` file in the backend directory. Copy `.env.example` if available.
 cp .env.example .env
 ```
 
-Edit `.env` and update with your PostgreSQL credentials. Note that file storage is now local (in `static/` directory) so no external storage keys are needed.
+Edit `.env` and update with your PostgreSQL credentials and ImageKit configuration.
 
 ```
 DATABASE_URL=postgresql://your_user:your_password@localhost:5432/kuebiko_db
 SECRET_KEY=your-secret-key-change-me
+IMAGEKIT_PRIVATE_KEY=your_imagekit_private_key
+IMAGEKIT_PUBLIC_KEY=your_imagekit_public_key
+IMAGEKIT_URL_ENDPOINT=https://ik.imagekit.io/your_imagekit_id
 ```
 
 ### 4. Run Migrations
@@ -60,14 +63,15 @@ python main.py
 ```
 
 The API will be available at http://localhost:8000. 
-Uploaded files will be served at `http://localhost:8000/static/`.
+For production, the backend is hosted on Render.
 
 ## Key Features
 
-- **Local Storage**: Files (comic covers, PDFs) are stored locally in the `static/comics` directory.
-- **Atomic Operations**: Helper logic ensures files and database records are kept in sync during uploads and failures.
-- **Bulk Operations**: Support for bulk deletion of comics and chapters.
-- **Authentication**: JWT-based auth with Superuser and User roles.
+- **ImageKit Storage**: Comic covers and chapter images are stored on ImageKit.io for optimized delivery
+- **Atomic Operations**: Helper logic ensures files and database records are kept in sync during uploads and failures
+- **Bulk Operations**: Support for bulk deletion of comics and chapters
+- **Authentication**: JWT-based auth with Superuser and User roles
+- **Cloud Hosting**: Production deployment on Render with PostgreSQL database
 
 ## API Documentation
 

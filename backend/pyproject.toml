@@ -1,5 +1,5 @@
 [project]
-name = "comic"
+name = "kuebiko"
 version = "0.0.1a"
 description = "A comic book website."
 readme = "README.md"
@@ -17,6 +17,5 @@ dependencies = [
     "requests>=2.32.5",
     "sqlalchemy>=2.0.46",
     "uvicorn>=0.40.0",
-    "supabase>=2.27.3",
     "imagekitio[aiohttp]>=5.2.0",
 ]

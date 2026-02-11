@@ -19,7 +19,7 @@ comic/
 ## Features
 
 - ✅ **JSON-based API** - Clean REST endpoints with JSON request/response
-- ✅ **PDF Management** - Upload, download, and manage comic PDF files
+- ✅ **Image Storage** - ImageKit.io integration for comic covers and chapter images
 - ✅ **Genre Classification** - Categorize comics with multiple genres
 - ✅ **PostgreSQL Database** - Robust and scalable database
 - ✅ **Input Validation** - Robust validation using Pydantic schemas
@@ -29,6 +29,7 @@ comic/
 - ✅ **CORS Support** - Ready for frontend integration
 - ✅ **Error Handling** - Comprehensive error handling with proper status codes
 - ✅ **Database Migrations** - Alembic for schema management
+- ✅ **Cloud Hosting** - Backend hosted on Render
 
 ## Quick Start
 
@@ -49,7 +50,12 @@ pip install -r requirements.txt
 ```bash
 cd backend
 cp .env.example .env
-# Edit .env if needed (default PostgreSQL settings work with docker-compose)
+# Edit .env with your configuration:
+# - DATABASE_URL: PostgreSQL connection (default works with docker-compose)
+# - SECRET_KEY: Your secret key for JWT tokens
+# - IMAGEKIT_PRIVATE_KEY: Your ImageKit private key
+# - IMAGEKIT_PUBLIC_KEY: Your ImageKit public key  
+# - IMAGEKIT_URL_ENDPOINT: Your ImageKit URL endpoint
 ```
 
 4. **Run migrations**
@@ -174,6 +180,8 @@ curl "http://localhost:8000/comics/" \
 - **PostgreSQL** - Robust database
 - **Pydantic** - Data validation
 - **Alembic** - Database migrations
+- **ImageKit.io** - Image storage and delivery
+- **Render** - Backend hosting platform
 - **Vue.js** - Frontend framework
 
 ## Development
