@@ -32,7 +32,8 @@ const { state } = useAuth();
 
 <style scoped>
 .landing-container {
-  min-height: 100vh;
+  min-height: 100vh; /* Fallback */
+  min-height: 100dvh;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -63,6 +64,8 @@ const { state } = useAuth();
   animation: fadeIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); /* Bouncy entrance */
   transform: rotate(-1deg); /* Slight playful tilt */
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  backface-visibility: hidden; /* Prevent jagged edges */
+  will-change: transform;
 }
 
 .hero-section:hover {
@@ -166,13 +169,29 @@ const { state } = useAuth();
   }
   
   .hero-section {
-    animation: fadeIn 0.3s ease-out;
+    animation: fadeInSimple 0.5s ease-out;
+    transform: none; /* No tilt */
+    transition: none;
+  }
+  
+  .hero-section:hover {
+    transform: none; /* No hover tilt/scale */
+  }
+  
+  .btn, .btn-primary:hover, .btn-secondary:hover {
+    transition: none;
+    transform: none !important;
   }
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(40px) scale(0.9); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(40px) scale(0.9) rotate(-3deg); }
+  to { opacity: 1; transform: translateY(0) scale(1) rotate(-1deg); }
+}
+
+@keyframes fadeInSimple {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @media (max-width: 1024px) {
