@@ -4,13 +4,16 @@ import { useAuth } from '../store';
 import logoSvg from '../assets/logo.svg';
 
 const { state } = useAuth();
+const handleImageError = (e: Event) => {
+  (e.target as HTMLImageElement).style.visibility = 'hidden';
+};
 </script>
 
 <template>
   <div class="landing-container">
     <div class="hero-section">
       <div class="logo-wrapper">
-        <img :src="logoSvg" alt="Kuebiko Logo" class="logo" />
+        <img :src="logoSvg" alt="Kuebiko Logo" class="logo" @error="handleImageError" />
       </div>
       
       <h1 class="title">Kuebiko Comics</h1>
@@ -32,8 +35,8 @@ const { state } = useAuth();
 
 <style scoped>
 .landing-container {
-  height: 100vh; /* Fallback */
-  height: 100dvh;
+  min-height: 100vh; /* Fallback */
+  min-height: 100dvh;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -49,7 +52,7 @@ const { state } = useAuth();
     linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   background-size: 24px 24px, 100% 100%;
   background-position: 0 0, 0 0;
-  overflow: hidden; /* Prevent scrolling */
+  /* overflow: hidden; Removed to allow scrolling on small screens */
 }
 
 .hero-section {
@@ -191,6 +194,11 @@ const { state } = useAuth();
   to { opacity: 1; transform: translateY(0) scale(1) rotate(-1deg); }
 }
 
+@keyframes fadeInMobile {
+  from { opacity: 0; transform: translateY(40px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 @keyframes fadeInSimple {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -206,6 +214,8 @@ const { state } = useAuth();
   .hero-section {
     padding: 2rem 1.5rem;
     /* transform: none; Removed to keep desktop tilt */
+    animation-name: fadeInMobile; /* Non-rotating entrance for mobile */
+    transform: none;
   }
   
   /* Removed .hero-section:hover override to keep desktop hover effect */
