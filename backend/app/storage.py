@@ -175,23 +175,65 @@ class ImageKitStorage:
             return f"/comics/{comic_id}"
         return "/comics/temp"
 
+    def delete_chapter_folder(self, comic_id: int, chapter_id: int) -> bool:
+        """Delete all files in a specific chapter folder from ImageKit"""
+        folder_path = f"/comics/{comic_id}/chapter_{chapter_id}"
+        
+        try:
+            # List all files in the chapter folder
+            list_result = self.imagekit.files.list(
+                path=folder_path,
+                skip=0,
+                limit=1000
+            )
+            
+            # Access the list attribute which contains the files
+            files = list_result.list if hasattr(list_result, 'list') else []
+            
+            deleted_count = 0
+            # Delete each file
+            for file in files:
+                try:
+                    file_id = file.get('fileId') if isinstance(file, dict) else getattr(file, 'file_id', None)
+                    if file_id:
+                        self.imagekit.files.delete(file_id)
+                        deleted_count += 1
+                except Exception as e:
+                    print(f"Failed to delete file {file_id}: {str(e)}")
+            
+            print(f"Deleted {deleted_count} files from chapter folder {chapter_id}")
+            return True
+        except Exception as e:
+            print(f"Failed to delete chapter folder from ImageKit: {str(e)}")
+            return False
+
     def delete_comic_folder(self, comic_id: int) -> bool:
-        """Delete all files in a comic's folder from ImageKit"""
+        """Delete all files in a comic's folder from ImageKit (including all chapter subfolders)"""
         folder_path = f"/comics/{comic_id}"
         
         try:
-            # List all files in the folder
+            # List all files in the folder and subfolders (recursive)
             list_result = self.imagekit.files.list(
-                path=folder_path
+                path=folder_path,
+                skip=0,
+                limit=1000  # Max limit per request
             )
             
-            # Delete each file
-            for file in list_result.response_metadata.raw:
-                try:
-                    self.imagekit.files.delete(file['fileId'])
-                except Exception as e:
-                    print(f"Failed to delete file {file.get('fileId')}: {str(e)}")
+            # Access the list attribute which contains the files
+            files = list_result.list if hasattr(list_result, 'list') else []
             
+            deleted_count = 0
+            # Delete each file
+            for file in files:
+                try:
+                    file_id = file.get('fileId') if isinstance(file, dict) else getattr(file, 'file_id', None)
+                    if file_id:
+                        self.imagekit.files.delete(file_id)
+                        deleted_count += 1
+                except Exception as e:
+                    print(f"Failed to delete file {file_id}: {str(e)}")
+            
+            print(f"Deleted {deleted_count} files from comic folder {comic_id}")
             return True
         except Exception as e:
             print(f"Failed to delete comic folder from ImageKit: {str(e)}")
@@ -225,11 +267,19 @@ class ImageKitStorage:
                         search_query=f'name="{filename}"'
                     )
                     
+                    # Access the list attribute
+                    files = list_result.list if hasattr(list_result, 'list') else []
+                    
                     # Find matching file by full path or URL
-                    for file in list_result.response_metadata.raw:
-                        if file.get('url') == file_url or file.get('filePath') == f"/{path}":
-                            self.imagekit.files.delete(file['fileId'])
-                            return True
+                    for file in files:
+                        file_dict = file if isinstance(file, dict) else file.__dict__
+                        file_url_match = file_dict.get('url') == file_url or file_dict.get('filePath') == f"/{path}"
+                        
+                        if file_url_match:
+                            file_id = file_dict.get('fileId') if isinstance(file, dict) else getattr(file, 'file_id', None)
+                            if file_id:
+                                self.imagekit.files.delete(file_id)
+                                return True
                 except Exception as e:
                     print(f"Failed to find file for deletion: {str(e)}")
             

@@ -297,22 +297,23 @@ def batch_delete_comics(comic_ids: List[int], db: Session = Depends(get_db), use
         deleted_count = len(comics)
         deleted_ids = [c.id for c in comics]
         
-        # Delete from DB
+        # Delete from DB (this will cascade delete chapters)
         db.query(Comic).filter(Comic.id.in_(comic_ids)).delete(synchronize_session=False)
         db.commit()
         
+        # Delete cover images
         for cover_url in cover_urls:
             try:
                 storage_client.delete_file(cover_url)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Failed to delete cover: {str(e)}")
 
-        # Cleanup folders to remove hierarchy
+        # Delete all comic folders (includes all chapter images)
         for comic_id in deleted_ids:
             try:
                 storage_client.delete_comic_folder(comic_id)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Failed to delete folder for comic {comic_id}: {str(e)}")
                 
         return {"message": f"Successfully deleted {deleted_count} comic{'s' if deleted_count > 1 else ''}", "deleted_count": deleted_count}
     except Exception as e:
@@ -322,26 +323,31 @@ def batch_delete_comics(comic_ids: List[int], db: Session = Depends(get_db), use
 @router.delete("/{comic_id}", status_code=status.HTTP_200_OK)
 def delete_comic(comic_id: int, db: Session = Depends(get_db), user: User = Depends(current_superuser)):
     """Delete a comic and its associated files from storage."""
-    comic = db.query(Comic).filter(Comic.id == comic_id).first()
+    comic = db.query(Comic).options(joinedload(Comic.chapters)).filter(Comic.id == comic_id).first()
     if not comic:
         raise HTTPException(status_code=404, detail="Comic not found")
     
     cover_url = comic.cover_image_url
+    
     try:
+        # First, delete the comic from database (this will cascade delete chapters due to cascade="all, delete-orphan")
         db.delete(comic)
         db.commit()
         
+        # Then cleanup files from ImageKit
+        # Delete cover image
         if cover_url:
             try:
                 storage_client.delete_file(cover_url)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Failed to delete cover image: {str(e)}")
 
-        # Remove any remaining objects in the comic folder
+        # Delete all files in the comic folder (includes all chapter images)
+        # This will recursively delete everything under /comics/{comic_id}/
         try:
             storage_client.delete_comic_folder(comic_id)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Failed to delete comic folder: {str(e)}")
         
         return {"message": "Comic and associated files deleted successfully"}
     except Exception as e:
