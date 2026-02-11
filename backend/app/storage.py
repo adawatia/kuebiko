@@ -1,113 +1,70 @@
-"""Supabase Storage utilities for managing file uploads"""
+"""ImageKit Storage utilities for managing file uploads"""
 
-import uuid
+import os
 import base64
 import binascii
-import re
-import hashlib
-from typing import Optional
-from supabase import create_client, Client
+from typing import Optional, List
 from fastapi import HTTPException
+from imagekitio import ImageKit
 from app.core.config import settings
 
+class ImageKitStorage:
+    """Handle file uploads to ImageKit"""
 
-class SupabaseStorage:
-    """Handle file uploads to Supabase Storage"""
-    
     def __init__(self):
-        if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
-            raise ValueError("Supabase credentials not configured. Please set SUPABASE_URL and SUPABASE_KEY environment variables.")
+        if not settings.IMAGEKIT_PRIVATE_KEY or not settings.IMAGEKIT_URL_ENDPOINT:
+            raise ValueError("ImageKit credentials not configured. Please set IMAGEKIT_PRIVATE_KEY and IMAGEKIT_URL_ENDPOINT in environment variables.")
         
-        self.client: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
-        self.bucket_name = settings.SUPABASE_BUCKET_NAME
+        # ImageKit SDK v5+ only accepts private_key in constructor
+        # url_endpoint is used when generating URLs via helper methods
+        self.imagekit = ImageKit(
+            private_key=settings.IMAGEKIT_PRIVATE_KEY
+        )
+        self.public_key = settings.IMAGEKIT_PUBLIC_KEY  # Store for client-side use if needed
+        self.url_endpoint = settings.IMAGEKIT_URL_ENDPOINT  # Store for URL generation
     
     def upload_pdf(self, file_content: bytes, comic_name: str, filename: Optional[str] = None, comic_id: Optional[int] = None) -> str:
-        """
-        Upload a PDF file to Supabase Storage organized by comic name.
-        
-        Args:
-            file_content: PDF file bytes
-            comic_name: Name of the comic (used for folder organization)
-            filename: Optional custom filename (defaults to 'comic.pdf')
-            
-        Returns:
-            Public URL of the uploaded file
-        """
+        """Upload PDF to ImageKit (Note: ImageKit is primarily for images, but can store PDFs)"""
         if not filename:
             filename = "comic.pdf"
         elif not filename.endswith('.pdf'):
             filename = f"{filename}.pdf"
         
-        folder_prefix = self._get_comic_folder_prefix(comic_name=comic_name, comic_id=comic_id)
-        file_path = f"{folder_prefix}/{filename}"
+        folder_path = self._get_comic_folder_path(comic_id)
         
         try:
-            # Use upsert to replace existing file if it exists
-            self.client.storage.from_(self.bucket_name).upload(
-                file_path,
-                file_content,
-                {"content-type": "application/pdf", "upsert": "true", "cacheControl": "3600"}
+            result = self.imagekit.files.upload(
+                file=file_content,
+                file_name=filename,
+                folder=folder_path,
+                use_unique_file_name=False
             )
             
-            # Get public URL
-            public_url = self.client.storage.from_(self.bucket_name).get_public_url(file_path)
-            return public_url
+            return result.url
             
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to upload PDF to Supabase: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to upload PDF to ImageKit: {str(e)}")
     
     def upload_image(self, image_data: bytes, comic_name: str, extension: str = ".png", comic_id: Optional[int] = None) -> str:
-        """
-        Upload an image to Supabase Storage organized by comic name.
-        
-        Args:
-            image_data: Image bytes
-            comic_name: Name of the comic (used for folder organization)
-            extension: File extension (e.g., '.png', '.jpg')
-            
-        Returns:
-            Public URL of the uploaded image
-        """
-        folder_prefix = self._get_comic_folder_prefix(comic_name=comic_name, comic_id=comic_id)
+        """Upload image to ImageKit"""
+        folder_path = self._get_comic_folder_path(comic_id)
         filename = f"cover{extension}"
-        file_path = f"{folder_prefix}/{filename}"
-        
-        # Determine content type
-        content_type = "image/png"
-        if extension in [".jpg", ".jpeg"]:
-            content_type = "image/jpeg"
-        elif extension == ".gif":
-            content_type = "image/gif"
-        elif extension == ".webp":
-            content_type = "image/webp"
         
         try:
-            # Use upsert to replace existing file if it exists
-            self.client.storage.from_(self.bucket_name).upload(
-                file_path,
-                image_data,
-                {"content-type": content_type, "upsert": "true", "cacheControl": "3600"}
+            result = self.imagekit.files.upload(
+                file=image_data,
+                file_name=filename,
+                folder=folder_path,
+                use_unique_file_name=False
             )
             
-            # Get public URL
-            public_url = self.client.storage.from_(self.bucket_name).get_public_url(file_path)
-            return public_url
+            return result.url
             
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to upload image to Supabase: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to upload image to ImageKit: {str(e)}")
     
     def upload_base64_image(self, base64_str: str, comic_name: str, comic_id: Optional[int] = None) -> str:
-        """
-        Decode base64 string and upload image to Supabase organized by comic name.
-        
-        Args:
-            base64_str: Base64 encoded image string
-            comic_name: Name of the comic (used for folder organization)
-            
-        Returns:
-            Public URL of the uploaded image
-        """
-        # Parse base64 string
+        """Upload base64 encoded image to ImageKit"""
         if "," in base64_str:
             header, encoded = base64_str.split(",", 1)
         else:
@@ -122,12 +79,10 @@ class SupabaseStorage:
         if not data:
             raise HTTPException(status_code=400, detail="Empty image data")
         
-        # Check size (max 5MB)
         if len(data) > 5 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="Image too large (max 5MB)")
         
-        # Determine extension
-        extension = ".png"  # Default
+        extension = ".png"
         if "image/jpeg" in header or "image/jpg" in header:
             extension = ".jpg"
         elif "image/gif" in header:
@@ -137,103 +92,202 @@ class SupabaseStorage:
         
         return self.upload_image(data, comic_name, extension, comic_id=comic_id)
     
-    def _sanitize_folder_name(self, name: str) -> str:
+    def upload_chapter_image(self, image_data: bytes, comic_id: int, chapter_id: int, image_index: int, extension: str = ".png") -> str:
+        """Upload a single chapter image to ImageKit"""
+        folder_path = self._get_chapter_folder_path(comic_id, chapter_id)
+        
+        # Use zero-padded index for proper sorting (e.g., page_001.png, page_002.png)
+        filename = f"page_{str(image_index).zfill(3)}{extension}"
+        
+        try:
+            result = self.imagekit.files.upload(
+                file=image_data,
+                file_name=filename,
+                folder=folder_path,
+                use_unique_file_name=False
+            )
+            
+            return result.url
+            
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to upload chapter image to ImageKit: {str(e)}")
+    
+    def upload_chapter_images(self, images_data: List[bytes], comic_id: int, chapter_id: int, extensions: List[str] = None) -> List[str]:
+        """Upload multiple chapter images and return their URLs."""
+        if extensions is None:
+            extensions = [".png"] * len(images_data)
+        
+        if len(images_data) != len(extensions):
+            raise HTTPException(status_code=400, detail="Mismatch between number of images and extensions")
+        
+        urls = []
+        for idx, (image_data, extension) in enumerate(zip(images_data, extensions), start=1):
+            url = self.upload_chapter_image(image_data, comic_id, chapter_id, idx, extension)
+            urls.append(url)
+        
+        return urls
+    
+    def generate_signed_url(self, image_url: str, expires_in: int = 3600) -> str:
         """
-        Sanitize a comic name to be used as a folder name.
-        Removes special characters and spaces.
+        Generate a signed URL for secure image access.
         
         Args:
-            name: Original comic name
-            
+            image_url: The original ImageKit URL
+            expires_in: Time in seconds until URL expires (default: 1 hour)
+        
         Returns:
-            Sanitized folder name
+            Signed URL that expires after the specified time
         """
-        if not name or not name.strip():
-            raise HTTPException(status_code=400, detail="Comic name cannot be empty")
-        
-        # Replace spaces with hyphens, remove special characters
-        sanitized = re.sub(r'[^\w\s-]', '', name)
-        sanitized = re.sub(r'[-\s]+', '-', sanitized)
-        sanitized = sanitized.strip('-').lower()
-        
-        # Handle edge case where sanitization results in empty string
-        if not sanitized:
-            # Use a hash of the original name as fallback
-            sanitized = hashlib.md5(name.encode()).hexdigest()[:8]
-        
-        return sanitized
-
-    def _get_comic_folder_prefix(self, comic_name: str, comic_id: Optional[int] = None) -> str:
-        """Return a stable folder prefix for a comic.
-
-        Prefer numeric ID (stable even if title changes), fallback to sanitized name.
-        """
-        if comic_id is not None:
-            return f"comics/{comic_id}"
-
-        safe_comic_name = self._sanitize_folder_name(comic_name)
-        return f"comics/{safe_comic_name}"
-
-    def delete_comic_folder(self, comic_id: int) -> bool:
-        """Delete all objects within a comic folder."""
-        prefix = f"comics/{comic_id}"
         try:
-            objects = self._list_objects(prefix)
-            if not objects:
-                return True
+            # Extract the path from the full URL
+            if self.url_endpoint in image_url:
+                path = image_url.replace(self.url_endpoint, "")
+                if not path.startswith("/"):
+                    path = "/" + path
+                
+                # Generate signed URL using ImageKit helper
+                signed_url = self.imagekit.helper.build_url(
+                    url_endpoint=self.url_endpoint,
+                    src=path,
+                    signed=True,
+                    expire_seconds=expires_in
+                )
+                
+                return signed_url
+            
+            return image_url  # Return original if not an ImageKit URL
+            
+        except Exception as e:
+            print(f"Failed to generate signed URL: {str(e)}")
+            return image_url  # Fallback to original URL
+    
+    def sign_urls_in_list(self, urls: List[str], expires_in: int = 3600) -> List[str]:
+        """Generate signed URLs for a list of image URLs"""
+        return [self.generate_signed_url(url, expires_in) for url in urls if url]
+    
+    def _get_chapter_folder_path(self, comic_id: int, chapter_id: int) -> str:
+        """Get the folder path for a specific chapter in ImageKit"""
+        return f"/comics/{comic_id}/chapter_{chapter_id}"
+    
+    def _get_comic_folder_path(self, comic_id: Optional[int] = None) -> str:
+        """Get the folder path for a comic in ImageKit"""
+        if comic_id is not None:
+            return f"/comics/{comic_id}"
+        return "/comics/temp"
 
-            paths = []
-            for obj in objects:
-                name = obj.get("name") if isinstance(obj, dict) else None
-                if name:
-                    paths.append(f"{prefix}/{name}")
-
-            if paths:
-                self.client.storage.from_(self.bucket_name).remove(paths)
+    def delete_chapter_folder(self, comic_id: int, chapter_id: int) -> bool:
+        """Delete all files in a specific chapter folder from ImageKit"""
+        folder_path = f"/comics/{comic_id}/chapter_{chapter_id}"
+        
+        try:
+            # List all files in the chapter folder
+            list_result = self.imagekit.files.list(
+                path=folder_path,
+                skip=0,
+                limit=1000
+            )
+            
+            # Access the list attribute which contains the files
+            files = list_result.list if hasattr(list_result, 'list') else []
+            
+            deleted_count = 0
+            # Delete each file
+            for file in files:
+                try:
+                    file_id = file.get('fileId') if isinstance(file, dict) else getattr(file, 'file_id', None)
+                    if file_id:
+                        self.imagekit.files.delete(file_id)
+                        deleted_count += 1
+                except Exception as e:
+                    print(f"Failed to delete file {file_id}: {str(e)}")
+            
+            print(f"Deleted {deleted_count} files from chapter folder {chapter_id}")
             return True
         except Exception as e:
-            print(f"Failed to delete comic folder from Supabase: {str(e)}")
+            print(f"Failed to delete chapter folder from ImageKit: {str(e)}")
             return False
 
-    def _list_objects(self, prefix: str):
-        """List objects in a prefix, compatible with multiple supabase-py versions."""
-        storage = self.client.storage.from_(self.bucket_name)
-        try:
-            return storage.list(prefix, {"limit": 1000, "offset": 0})
-        except TypeError:
-            return storage.list(prefix)
-    
-    def delete_file(self, file_url: str) -> bool:
-        """
-        Delete a file from Supabase Storage.
+    def delete_comic_folder(self, comic_id: int) -> bool:
+        """Delete all files in a comic's folder from ImageKit (including all chapter subfolders)"""
+        folder_path = f"/comics/{comic_id}"
         
-        Args:
-            file_url: Public URL of the file
-            
-        Returns:
-            True if successful
-        """
         try:
-            # Extract file path from URL
-            # URL format: https://{project}.supabase.co/storage/v1/object/public/{bucket}/{path}
+            # List all files in the folder and subfolders (recursive)
+            list_result = self.imagekit.files.list(
+                path=folder_path,
+                skip=0,
+                limit=1000  # Max limit per request
+            )
+            
+            # Access the list attribute which contains the files
+            files = list_result.list if hasattr(list_result, 'list') else []
+            
+            deleted_count = 0
+            # Delete each file
+            for file in files:
+                try:
+                    file_id = file.get('fileId') if isinstance(file, dict) else getattr(file, 'file_id', None)
+                    if file_id:
+                        self.imagekit.files.delete(file_id)
+                        deleted_count += 1
+                except Exception as e:
+                    print(f"Failed to delete file {file_id}: {str(e)}")
+            
+            print(f"Deleted {deleted_count} files from comic folder {comic_id}")
+            return True
+        except Exception as e:
+            print(f"Failed to delete comic folder from ImageKit: {str(e)}")
+            return False
+
+    def delete_file(self, file_url: str) -> bool:
+        """Delete a file from ImageKit by its URL"""
+        try:
             if not file_url:
                 return False
             
-            # Parse the path from URL
-            parts = file_url.split(f"{self.bucket_name}/")
-            if len(parts) < 2:
-                return False
+            # Extract file_id from URL or search for the file
+            # ImageKit URLs typically contain the file path
+            # We need to get the file_id first by listing files with the path
             
-            file_path = parts[1]
+            # Extract the path from the URL
+            # URL format: https://ik.imagekit.io/your_id/path/to/file.ext
+            if self.url_endpoint in file_url:
+                # Remove the base URL endpoint to get the path
+                path = file_url.replace(self.url_endpoint, "")
+                if path.startswith("/"):
+                    path = path[1:]  # Remove leading slash
+                
+                # List files to find the file_id
+                try:
+                    # Get filename from path
+                    filename = path.split('/')[-1]
+                    
+                    # Search for the file by name
+                    list_result = self.imagekit.files.list(
+                        search_query=f'name="{filename}"'
+                    )
+                    
+                    # Access the list attribute
+                    files = list_result.list if hasattr(list_result, 'list') else []
+                    
+                    # Find matching file by full path or URL
+                    for file in files:
+                        file_dict = file if isinstance(file, dict) else file.__dict__
+                        file_url_match = file_dict.get('url') == file_url or file_dict.get('filePath') == f"/{path}"
+                        
+                        if file_url_match:
+                            file_id = file_dict.get('fileId') if isinstance(file, dict) else getattr(file, 'file_id', None)
+                            if file_id:
+                                self.imagekit.files.delete(file_id)
+                                return True
+                except Exception as e:
+                    print(f"Failed to find file for deletion: {str(e)}")
             
-            self.client.storage.from_(self.bucket_name).remove([file_path])
-            return True
+            return False
             
         except Exception as e:
-            # Log error but don't raise exception for deletion failures
-            print(f"Failed to delete file from Supabase: {str(e)}")
+            print(f"Failed to delete file from ImageKit: {str(e)}")
             return False
 
-
 # Create a singleton instance
-supabase_storage = SupabaseStorage()
+storage_client = ImageKitStorage()

@@ -1,189 +1,52 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, onUnmounted, watch, nextTick, shallowRef } from 'vue';
-import { BookOpen, Image as ImageIcon, FileText, Trash2, X, AlertCircle, Book, Loader2, ArrowUpDown, ChevronLeft, ChevronRight, Plus, Minus, Minimize, Maximize } from 'lucide-vue-next';
+import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
+import { BookOpen, Image as ImageIcon, Trash2, X, AlertCircle, Book, Loader2, ArrowUpDown, ChevronLeft, ChevronRight, Plus, Edit2, Check } from 'lucide-vue-next';
+import Pagination from '../components/Pagination.vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getComic, deleteComic, uploadComicPdf, updateComic, type Comic } from '../api/comics';
-import apiClient, { API_URL } from '../api/client';
-import VuePdfEmbed from 'vue-pdf-embed';
+import { getComic, deleteComic, updateComic, type Comic } from '../api/comics';
+import { createChapter, uploadChapterImages, deleteChapter, updateChapter, getChapters, type Chapter } from '../api/chapters';
+import { API_URL } from '../api/client';
 import { useAuth } from '../store';
-import InfiniteLoading from "v3-infinite-loading";
-import "v3-infinite-loading/lib/style.css";
-import * as pdfjsLib from 'pdfjs-dist';
 
-// Configure Worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+const getAssetUrl = (url: string | null) => {
+    if (!url) return '';
+    if (url.startsWith('http')) return url;
+    return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+};
 
 const route = useRoute();
 const router = useRouter();
-const { isSuperuser } = useAuth();
+const { isSuperuser, state } = useAuth();
 const comic = ref<Comic | null>(null);
 const loading = ref(true);
 const uploading = ref(false);
 const readingMode = ref(false);
 
-const pdfSource = ref<string | object | null>(null);
-const pdfDocument = shallowRef<any>(null); // Optimization: Cache loaded PDF document
+// Chapter Pagination State
+const chapters = ref<Chapter[]>([]);
+const chaptersPage = ref(1);
+const chaptersTotal = ref(0);
+const chaptersTotalPages = ref(1);
+const chaptersLoading = ref(false);
 
 // Reader state
-const pageNum = ref(1);
-const pageCount = ref(0);
-const zoomLevel = ref(0.8);
+const currentImages = ref<string[]>([]);
+const currentPageIndex = ref(0);
 const windowWidth = ref(document.documentElement.clientWidth || window.innerWidth);
 const readerScroll = ref<HTMLElement | null>(null);
-const pageRefs = ref<HTMLElement[]>([]);
 
 // Scroll Mode
-const scrollMode = ref<'horizontal' | 'vertical'>('horizontal');
-const verticalPages = ref<number[]>([]);
-const hasMorePages = computed(() => verticalPages.value.length < pageCount.value);
+const scrollMode = ref<'single' | 'vertical'>('single');
 
-let observer: IntersectionObserver | null = null;
+// Zoom controls
+const zoomLevel = ref(1.0); // 1.0 = 100%, 0.5 = 50%, 2.0 = 200%
+const fitMode = ref<'width' | 'height' | 'none'>('width'); // Default to fit width
 
-// Returns either the document proxy (if loaded) or the source URL
-// This ensures subsequent pages in vertical mode load instantly from memory
-const actualSource = computed(() => pdfDocument.value || pdfSource.value);
-
-const pdfWidth = computed(() => {
-    return Math.floor(windowWidth.value * zoomLevel.value);
-});
+const currentPage = computed(() => currentPageIndex.value + 1);
+const totalPages = computed(() => currentImages.value.length);
 
 const updateWindowWidth = () => {
     windowWidth.value = document.documentElement.clientWidth || window.innerWidth;
-};
-
-// Intersection Observer for Vertical Page Tracking
-watch(verticalPages, async (newPages, oldPages) => {
-    // Only update observer if pages were added, not reset
-    if (newPages.length === 0) {
-        if (observer) {
-            observer.disconnect();
-        }
-        return;
-    }
-    
-    await nextTick();
-    
-    // Create observer once if it doesn't exist
-    if (!observer) {
-        observer = new IntersectionObserver((entries) => {
-            // Find the most visible page (highest intersection ratio)
-            let mostVisible = entries[0];
-            for (const entry of entries) {
-                if (entry.isIntersecting && entry.intersectionRatio > (mostVisible?.intersectionRatio || 0)) {
-                    mostVisible = entry;
-                }
-            }
-            
-            if (mostVisible && mostVisible.isIntersecting && mostVisible.intersectionRatio > 0.3) {
-                const p = Number(mostVisible.target.getAttribute('data-page'));
-                if (p && p !== pageNum.value) {
-                    pageNum.value = p;
-                }
-            }
-        }, { threshold: [0, 0.3, 0.5, 0.7, 1.0] });
-    }
-    
-    // Observe only newly added pages
-    const startIndex = oldPages?.length || 0;
-    for (let i = startIndex; i < newPages.length; i++) {
-        await nextTick();
-        const el = pageRefs.value[i];
-        if (el && !el.hasAttribute('data-observed')) {
-            observer.observe(el);
-            el.setAttribute('data-observed', 'true');
-        }
-    }
-});
-
-// Watch for route changes to close reader if navigating to another comic
-watch(() => route.params.id, (newId, oldId) => {
-    if (newId !== oldId && readingMode.value) {
-        closeReader();
-    }
-});
-
-const onPdfLoaded = (pdfDoc: any) => {
-    // Set page count only once from the first loaded instance
-    if (pageCount.value === 0 && pdfDoc?.numPages) {
-        pageCount.value = pdfDoc.numPages;
-    }
-    // Optimization: Store the loaded document proxy (only once)
-    if (!pdfDocument.value && pdfDoc) {
-        pdfDocument.value = pdfDoc;
-    }
-};
-
-const toggleScrollMode = async () => {
-    const prevMode = scrollMode.value;
-    scrollMode.value = scrollMode.value === 'horizontal' ? 'vertical' : 'horizontal';
-    
-    // Clean up observer when switching modes
-    if (observer) {
-        observer.disconnect();
-        observer = null;
-    }
-    
-    await nextTick();
-
-    if (scrollMode.value === 'vertical') {
-        // Initialize vertical mode with pages up to current page
-        verticalPages.value = [];
-        const pagesToLoad = Math.min(pageNum.value || 1, pageCount.value || 1);
-        for(let i = 1; i <= pagesToLoad; i++) {
-            verticalPages.value.push(i);
-        }
-        // Scroll to top of vertical reader
-        await nextTick();
-        scrollToTop();
-    } else {
-        // Switching to horizontal mode - maintain current page
-        verticalPages.value = [];
-        pageRefs.value = [];
-        // Ensure pageNum is valid
-        if (pageNum.value < 1) pageNum.value = 1;
-        if (pageCount.value > 0 && pageNum.value > pageCount.value) {
-            pageNum.value = pageCount.value;
-        }
-        await nextTick();
-        scrollToTop();
-    }
-};
-
-const handleLoadMore = ($state: any) => {
-    // Guard against loading before pageCount is known
-    if (pageCount.value === 0) {
-        // Defer until pageCount is set
-        setTimeout(() => handleLoadMore($state), 100);
-        return;
-    }
-    
-    const nextPage = verticalPages.value.length + 1;
-    
-    if (nextPage <= pageCount.value) {
-        // Check if page isn't already in the array (prevent duplicates)
-        if (!verticalPages.value.includes(nextPage)) {
-            verticalPages.value.push(nextPage);
-        }
-        $state.loaded();
-    } else {
-        $state.complete();
-    }
-};
-
-const fitToWidth = () => {
-    if (Math.abs(zoomLevel.value - 1.0) < 0.01) {
-        zoomLevel.value = 0.8;
-    } else {
-        zoomLevel.value = 1.0;
-    }
-};
-
-const zoomIn = () => {
-    zoomLevel.value = Math.min(zoomLevel.value + 0.1, 2.0);
-};
-
-const zoomOut = () => {
-    zoomLevel.value = Math.max(zoomLevel.value - 0.1, 0.3);
 };
 
 const scrollToTop = () => {
@@ -192,107 +55,120 @@ const scrollToTop = () => {
     }
 };
 
+const zoomIn = () => {
+    fitMode.value = 'none';
+    zoomLevel.value = Math.min(zoomLevel.value + 0.2, 3.0); // Max 300%
+};
+
+const zoomOut = () => {
+    fitMode.value = 'none';
+    zoomLevel.value = Math.max(zoomLevel.value - 0.2, 0.3); // Min 30%
+};
+
+const fitToWidth = () => {
+    fitMode.value = 'width';
+    zoomLevel.value = 1.0;
+};
+
+const fitToHeight = () => {
+    fitMode.value = 'height';
+    zoomLevel.value = 1.0;
+};
+
+const resetZoom = () => {
+    fitMode.value = 'none';
+    zoomLevel.value = 1.0;
+};
+
 const prevPage = () => {
-    if (pageNum.value > 1) {
-        pageNum.value--;
+    if (currentPageIndex.value > 0) {
+        currentPageIndex.value--;
         scrollToTop();
     }
 };
 
 const nextPage = () => {
-    if (pageNum.value < pageCount.value) {
-        pageNum.value++;
+    if (currentPageIndex.value < currentImages.value.length - 1) {
+        currentPageIndex.value++;
         scrollToTop();
     }
 };
 
+const toggleScrollMode = () => {
+    scrollMode.value = scrollMode.value === 'single' ? 'vertical' : 'single';
+    scrollToTop();
+};
+
+// Anti-piracy: Prevent context menu and image saving
+const preventContextMenu = (e: Event) => {
+    e.preventDefault();
+    return false;
+};
+
+const preventDragStart = (e: Event) => {
+    e.preventDefault();
+    return false;
+};
+
 const closeReader = () => {
     readingMode.value = false;
-    pdfSource.value = null; 
-    pdfDocument.value = null; // Clear cached doc
-    verticalPages.value = [];
-    pageNum.value = 1;
-    pageCount.value = 0;
-    pageRefs.value = [];
-    if (observer) {
-        observer.disconnect();
-        observer = null;
-    }
+    currentImages.value = [];
+    currentPageIndex.value = 0;
+    zoomLevel.value = 1.0;
+    fitMode.value = 'width';
 };
 
-const handleReadOnline = () => {
+const handleReadChapter = (chapter: Chapter) => {
+    // Check if user is authenticated before allowing reading
+    if (!state.isAuthenticated) {
+        // Store intended destination for redirect after login
+        const returnPath = `/comic/${route.params.id}`;
+        router.push({ 
+            name: 'login', 
+            query: { redirect: returnPath }
+        });
+        return;
+    }
+    
     try {
-        if (!comic.value?.pdf_url) {
-            alert('No PDF available for this comic.');
+        // Additional check: if image_urls is missing, it means the API didn't return them
+        // This shouldn't happen for authenticated users, but let's be safe
+        if (!chapter.image_urls || chapter.image_urls.length === 0) {
+            alert('No images available for this chapter.');
             return;
         }
         
-        if (!comic.value.pdf_url.startsWith('http')) {
-            alert('Invalid PDF URL.');
-            return;
-        }
-        
-        // Use the Supabase URL directly
-        pdfSource.value = {
-            url: comic.value.pdf_url,
-            withCredentials: false
-        };
-
-        // Initialize based on current scroll mode
-        if (scrollMode.value === 'vertical') {
-            verticalPages.value = [1];
-        } else {
-            verticalPages.value = [];
-        }
-        
-        pageNum.value = 1; // Reset to page 1 for reader open
+        currentImages.value = chapter.image_urls.map(url => getAssetUrl(url));
+        currentPageIndex.value = 0;
         readingMode.value = true;
     } catch (e) {
-        console.error('Error opening PDF reader:', e);
-        alert('Failed to open PDF reader.');
+        console.error('Error opening chapter:', e);
+        alert('Failed to open chapter.');
     }
 };
 
-const handleKeydown = (e: KeyboardEvent) => {
-    if (!readingMode.value) return;
-    
-    // Disable arrow paging in vertical mode to allow natural scrolling
-    if (scrollMode.value === 'vertical') {
-       if (e.key === 'Escape') {
-           e.preventDefault();
-           closeReader();
-       }
-       if (e.key === '+' || e.key === '=') {
-           e.preventDefault();
-           zoomIn();
-       }
-       if (e.key === '-' || e.key === '_') {
-           e.preventDefault();
-           zoomOut();
-       }
-       return; 
-    }
-
-    // Horizontal mode with keyboard navigation
-    if (e.key === 'ArrowRight' || e.key === ' ') {
-        e.preventDefault();
-        nextPage();
-    } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        prevPage();
-    } else if (e.key === 'Escape') {
-        e.preventDefault();
-        closeReader();
-    } else if (e.key === '+' || e.key === '=') {
-        e.preventDefault();
-        zoomIn();
-    } else if (e.key === '-' || e.key === '_') {
-        e.preventDefault();
-        zoomOut();
-    }
-};
+const newChapterNumber = ref<number | null>(null);
+const newChapterTitle = ref('');
+const creatingChapter = ref(false);
+const showAddChapter = ref(false);
+const chaptersUploading = ref(new Set<number>());
 
 const comicId = parseInt(route.params.id as string);
+
+const loadChapters = async (page = 1) => {
+    chaptersLoading.value = true;
+    try {
+        const response = await getChapters(comicId, page, 10);
+        chapters.value = response.items;
+        chaptersTotal.value = response.total_chapters;
+        chaptersTotalPages.value = response.total_pages;
+        chaptersPage.value = response.current_page;
+    } catch (e) {
+        console.error("Failed to load chapters", e);
+    } finally {
+        chaptersLoading.value = false;
+    }
+};
 
 const fetchComic = async () => {
     try {
@@ -308,95 +184,213 @@ onMounted(async () => {
     window.addEventListener('resize', updateWindowWidth);
     window.addEventListener('keydown', handleKeydown);
     
-    const shouldRead = route.query.read === 'true';
+    // Initial load
     await fetchComic();
+    await loadChapters();
     
-    if (shouldRead && comic.value?.pdf_url) {
-        handleReadOnline();
+    const shouldRead = route.query.read === 'true';
+    const firstChapter = chapters.value?.[0]; // Use paginated list
+    if (shouldRead && firstChapter && firstChapter.image_urls && firstChapter.image_urls.length > 0) {
+        handleReadChapter(firstChapter);
     }
 });
+
+const openFirstChapter = () => {
+    const firstChapter = comic.value?.chapters?.[0];
+    if (firstChapter) {
+        handleReadChapter(firstChapter);
+    }
+};
 
 onUnmounted(() => {
     window.removeEventListener('resize', updateWindowWidth);
     window.removeEventListener('keydown', handleKeydown);
-    if (observer) {
-        observer.disconnect();
-        observer = null;
+});
+
+// Update handlers to reload chapters
+const handleCreateChapter = async () => {
+    if (!newChapterNumber.value || !newChapterTitle.value) {
+        alert("Please enter chapter number and title.");
+        return;
+    }
+    
+    creatingChapter.value = true;
+    try {
+        await createChapter({
+            comic_id: comicId,
+            chapter_number: newChapterNumber.value,
+            title: newChapterTitle.value,
+            page_count: 0,
+            is_published: true
+        });
+        await loadChapters(chaptersPage.value); // Reload current page
+        newChapterNumber.value = null;
+        newChapterTitle.value = '';
+        alert("Chapter created successfully!");
+    } catch (e: any) {
+        console.error(e);
+        alert(e.response?.data?.detail || "Failed to create chapter");
+    } finally {
+        creatingChapter.value = false;
+    }
+};
+
+const handleDeleteChapter = async (chapterId: number) => {
+    if (confirm("Are you sure you want to delete this chapter?")) {
+        try {
+            await deleteChapter(chapterId);
+            await loadChapters(chaptersPage.value);
+        } catch (e) {
+            alert("Failed to delete chapter");
+        }
+    }
+};
+
+const handleChapterImagesUpload = async (chapterId: number, event: Event) => {
+    const input = event.target as HTMLInputElement;
+    if (input.files && input.files.length > 0) {
+        const files = Array.from(input.files);
+        
+        // Validate files
+        const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+        for (const file of files) {
+            if (!validTypes.includes(file.type)) {
+                alert(`Invalid file type: ${file.name}. Only JPG, PNG, GIF, and WebP are allowed.`);
+                input.value = '';
+                return;
+            }
+        }
+        
+        chaptersUploading.value.add(chapterId);
+        try {
+            await uploadChapterImages(chapterId, files);
+            await loadChapters(chaptersPage.value);
+            alert(`${files.length} image(s) uploaded successfully!`);
+        } catch (e) {
+            console.error(e);
+            alert("Failed to upload images");
+        } finally {
+            chaptersUploading.value.delete(chapterId);
+            input.value = '';
+        }
+    }
+};
+
+const saveChapterEdit = async () => {
+    if (!editingChapterId.value) return;
+    
+    try {
+        await updateChapter(editingChapterId.value, {
+            chapter_number: editForm.value.chapter_number,
+            title: editForm.value.title
+        });
+        await loadChapters(chaptersPage.value);
+        editingChapterId.value = null;
+    } catch (e) {
+        console.error(e);
+        alert("Failed to update chapter details");
+    }
+};
+
+// Auto-calculate next chapter number when adding
+watch(showAddChapter, (newVal) => {
+    if (newVal) {
+        let maxNum = 0;
+        // Try to find max from full list first
+        if (comic.value?.chapters && comic.value.chapters.length > 0) {
+             const numbers = comic.value.chapters.map(c => c.chapter_number);
+             maxNum = Math.max(...numbers);
+        } 
+        // Fallback to current page
+        else if (chapters.value.length > 0) {
+             const numbers = chapters.value.map(c => c.chapter_number);
+             maxNum = Math.max(...numbers);
+        }
+        newChapterNumber.value = maxNum + 1;
     }
 });
+
+// Edit Chapter Functionality
+const editingChapterId = ref<number | null>(null);
+const editForm = ref({
+    chapter_number: 0,
+    title: ''
+});
+
+const startEditingChapter = (chapter: Chapter) => {
+    editingChapterId.value = chapter.id;
+    editForm.value = {
+        chapter_number: chapter.chapter_number,
+        title: chapter.title
+    };
+};
+
+const cancelEditChapter = () => {
+    editingChapterId.value = null;
+    editForm.value = { chapter_number: 0, title: '' };
+};
+
+const handleKeydown = (e: KeyboardEvent) => {
+    if (!readingMode.value) return;
+    
+    // Zoom controls (work in both modes)
+    if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        zoomIn();
+        return;
+    }
+    if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        zoomOut();
+        return;
+    }
+    if (e.key === '0') {
+        e.preventDefault();
+        resetZoom();
+        return;
+    }
+    if (e.key === 'w' || e.key === 'W') {
+        e.preventDefault();
+        fitToWidth();
+        return;
+    }
+    if (e.key === 'h' || e.key === 'H') {
+        e.preventDefault();
+        fitToHeight();
+        return;
+    }
+    
+    if (scrollMode.value === 'vertical') {
+       if (e.key === 'Escape') {
+           e.preventDefault();
+           closeReader();
+       }
+       return; 
+    }
+
+    // Single page mode with keyboard navigation
+    if (e.key === 'ArrowRight' || e.key === ' ') {
+        e.preventDefault();
+        nextPage();
+    } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        prevPage();
+    } else if (e.key === 'Escape') {
+        e.preventDefault();
+        closeReader();
+    }
+};
 
 const handleDelete = async () => {
     if (confirm('Are you sure you want to delete this comic?')) {
         try {
             await deleteComic(comicId);
-            router.push('/');
+            router.push('/explore');
         } catch (e) {
             alert('Failed to delete comic');
         }
     }
 };
-
-const getPdfBlob = async () => {
-    try {
-        const response = await apiClient.get(`/comics/${comicId}/pdf`, { responseType: 'blob' });
-        return window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
-    } catch (e) {
-        alert('Failed to load PDF.');
-        return null;
-    }
-};
-
-const downloadPdf = async () => {
-    const url = await getPdfBlob();
-    if (url) {
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', `${comic.value?.title || 'comic'}.pdf`);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-    }
-};
-
-const handleUploadPdf = async (event: Event) => {
-    const target = event.target as HTMLInputElement;
-    if (target.files && target.files.length > 0) {
-        const file = target.files[0];
-        if (!file) return;
-        
-        // Validate file type
-        if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
-            alert('Please upload a PDF file.');
-            target.value = '';
-            return;
-        }
-        
-        // Check file size (100MB max)
-        if (file.size > 100 * 1024 * 1024) {
-            alert('PDF file is too large. Maximum size is 100MB.');
-            target.value = '';
-            return;
-        }
-        
-        uploading.value = true;
-        try {
-            await uploadComicPdf(comicId, file);
-            await fetchComic(); // Refresh to see updated status
-            pdfSource.value = null; // Reset cached source
-            pdfDocument.value = null; // Clear cached document
-            alert('PDF uploaded successfully!');
-        } catch (e: any) {
-            console.error(e);
-            const errorMsg = e?.response?.data?.detail || 'Failed to upload PDF';
-            alert(errorMsg);
-        } finally {
-            uploading.value = false;
-            // Clear input
-            target.value = '';
-        }
-    }
-}
-
 
 const handleUploadCover = async (event: Event) => {
     const target = event.target as HTMLInputElement;
@@ -404,7 +398,6 @@ const handleUploadCover = async (event: Event) => {
         const file = target.files[0];
         if (!file) return;
         
-        // Validate file type
         const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
         if (!validTypes.includes(file.type)) {
             alert('Invalid file type. Please upload a JPEG, PNG, GIF, or WebP image.');
@@ -442,6 +435,86 @@ const handleUploadCover = async (event: Event) => {
         reader.readAsDataURL(file);
     }
 };
+
+// Comic Details Editing
+const isEditingComic = ref(false);
+const editComicForm = ref({
+    title: '',
+    author: '',
+    status: 'ongoing',
+    description: '',
+    genres: [] as string[]
+});
+
+const statusOptions = [
+    { value: 'ongoing', label: 'Ongoing' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'hiatus', label: 'Hiatus' }
+];
+
+const availableGenres = ref([
+    'Action', 'Adventure', 'Fantasy', 'Horror', 'Romance', 'Sci-Fi', 'Mystery', 'Slice of Life', 'Other'
+]);
+
+const savingDetails = ref(false);
+
+const startEditingComic = () => {
+    if (!comic.value) return;
+    
+    // Add any existing comic genres to available list if missing
+    if (comic.value.genres) {
+        comic.value.genres.forEach(g => {
+            if (!availableGenres.value.includes(g)) {
+                availableGenres.value.push(g);
+            }
+        });
+    }
+
+    editComicForm.value = {
+        title: comic.value.title,
+        author: comic.value.author,
+        status: comic.value.status,
+        description: comic.value.description || '',
+        genres: comic.value.genres ? [...comic.value.genres] : []
+    };
+    isEditingComic.value = true;
+};
+
+const cancelEditComic = () => {
+    isEditingComic.value = false;
+};
+
+const saveComicDetails = async () => {
+    if (!editComicForm.value.title.trim()) {
+        alert("Title is required");
+        return;
+    }
+    if (!editComicForm.value.author.trim()) {
+        alert("Author is required");
+        return;
+    }
+
+    savingDetails.value = true;
+    try {
+        await updateComic(comicId, {
+            title: editComicForm.value.title,
+            author: editComicForm.value.author,
+            status: editComicForm.value.status,
+            description: editComicForm.value.description,
+            genres: editComicForm.value.genres
+        });
+        
+        await fetchComic();
+        isEditingComic.value = false;
+    } catch (e: any) {
+        console.error('Failed to update comic:', e);
+        const errorMsg = e?.response?.data?.detail || 'Failed to update comic details';
+        alert(errorMsg);
+    } finally {
+        savingDetails.value = false;
+    }
+};
+
 </script>
 
 <template>
@@ -457,8 +530,8 @@ const handleUploadCover = async (event: Event) => {
             <h3 class="reader-title">{{ comic.title }}</h3>
             
             <div class="reader-controls-center">
-                 <button @click="toggleScrollMode" class="btn-icon" :title="scrollMode === 'horizontal' ? 'Switch to Vertical Scroll' : 'Switch to Horizontal Standard'">
-                    <ArrowUpDown v-if="scrollMode === 'horizontal'" />
+                 <button @click="toggleScrollMode" class="btn-icon" :title="scrollMode === 'single' ? 'Switch to Vertical Scroll' : 'Switch to Single Page'">
+                    <ArrowUpDown v-if="scrollMode === 'single'" />
                     <BookOpen v-else />
                 </button>
             </div>
@@ -469,73 +542,77 @@ const handleUploadCover = async (event: Event) => {
         </div>
 
         <div class="reader-content scroll-container" ref="readerScroll">
-            <div class="pdf-wrapper" :style="{ width: pdfWidth + 'px' }">
-                
-                <!-- Horizontal Mode -->
-                <div v-if="scrollMode === 'horizontal'" class="horizontal-reader">
-                    <VuePdfEmbed 
-                        v-if="pdfSource"
-                        :source="pdfSource" 
-                        :page="pageNum"
-                        @loaded="onPdfLoaded"
-                        class="pdf-viewer"
-                        :width="pdfWidth"
-                    />
-                    <div v-else class="pdf-loading">
-                        <Loader2 class="spinner-icon" />
-                        <p>Loading PDF...</p>
-                    </div>
-                </div>
+            <!-- Watermark overlay -->
+            <div class="watermark-overlay">
+                <span class="watermark-text">{{ state.user?.email || 'Licensed User' }}</span>
+            </div>
+            
+            <!-- Single Page Mode -->
+            <div v-if="scrollMode === 'single'" class="single-page-reader">
+                <img 
+                    v-if="currentImages[currentPageIndex]"
+                    :src="currentImages[currentPageIndex]" 
+                    :alt="`Page ${currentPage}`"
+                    class="comic-page-image protected-image"
+                    :class="{ 
+                        'fit-width': fitMode === 'width',
+                        'fit-height': fitMode === 'height',
+                        'manual-zoom': fitMode === 'none'
+                    }"
+                    :style="fitMode === 'none' ? { transform: `scale(${zoomLevel})` } : {}"
+                    loading="eager"
+                    @contextmenu="preventContextMenu"
+                    @dragstart="preventDragStart"
+                />
+            </div>
 
-                <!-- Vertical Mode -->
-                <div v-else class="vertical-reader">
-                    <div v-for="page in verticalPages" :key="page" class="page-wrapper" :data-page="page" ref="pageRefs">
-                        <VuePdfEmbed 
-                            :source="pdfSource" 
-                            :page="page"
-                            @loaded="onPdfLoaded"
-                            class="pdf-page"
-                            :width="pdfWidth"
-                        />
-                    </div>
-                    <InfiniteLoading @infinite="handleLoadMore" v-if="pageCount > 0">
-                        <template #complete>
-                            <span class="end-message">End of Comic</span>
-                        </template>
-                        <template #error>
-                             <span class="error-message">Error loading pages</span>
-                        </template>
-                    </InfiniteLoading>
-                </div>
-
+            <!-- Vertical Scroll Mode -->
+            <div v-else class="vertical-reader">
+                <img 
+                    v-for="(imageUrl, index) in currentImages" 
+                    :key="index"
+                    :src="imageUrl" 
+                    :alt="`Page ${index + 1}`"
+                    class="comic-page-image vertical-image protected-image"
+                    :class="{ 
+                        'fit-width': fitMode === 'width',
+                        'manual-zoom': fitMode === 'none'
+                    }"
+                    :style="fitMode === 'none' ? { transform: `scale(${zoomLevel})`, transformOrigin: 'top center' } : {}"
+                    :loading="index < 3 ? 'eager' : 'lazy'"
+                    @contextmenu="preventContextMenu"
+                    @dragstart="preventDragStart"
+                />
             </div>
         </div>
 
-        <div class="reader-footer" v-if="scrollMode === 'horizontal'">
+        <div class="reader-footer" v-if="scrollMode === 'single'">
             <div class="zoom-controls">
-                <button @click="zoomOut" class="btn-icon">－</button>
+                <button @click="zoomOut" class="btn-icon" title="Zoom Out (-)"  >−</button>
                 <span class="zoom-label">{{ Math.round(zoomLevel * 100) }}%</span>
-                <button @click="zoomIn" class="btn-icon">＋</button>
-                <button @click="fitToWidth" class="btn-text">Fit Width</button>
+                <button @click="zoomIn" class="btn-icon" title="Zoom In (+)">+</button>
+                <button @click="fitToWidth" class="btn-text" :class="{ 'active': fitMode === 'width' }" title="Fit to Width (W)">Fit Width</button>
+                <button @click="fitToHeight" class="btn-text" :class="{ 'active': fitMode === 'height' }" title="Fit to Height (H)">Fit Height</button>
+                <button @click="resetZoom" class="btn-text" title="Reset Zoom (0)">100%</button>
             </div>
 
-            <div class="pagination-controls" v-if="pageCount > 0">
-                <button @click="prevPage" :disabled="pageNum <= 1" class="btn-icon">←</button>
-                <span class="page-counter">{{ pageNum }} / {{ pageCount }}</span>
-                <button @click="nextPage" :disabled="pageNum >= pageCount" class="btn-icon">→</button>
+            <div class="pagination-controls">
+                <button @click="prevPage" :disabled="currentPageIndex <= 0" class="btn-icon">←</button>
+                <span class="page-counter">{{ currentPage }} / {{ totalPages }}</span>
+                <button @click="nextPage" :disabled="currentPageIndex >= totalPages - 1" class="btn-icon">→</button>
             </div>
         </div>
         
-        <!-- Vertical Footer (Simplified) -->
         <div class="reader-footer" v-else>
              <div class="zoom-controls">
-                <button @click="zoomOut" class="btn-icon">－</button>
+                <button @click="zoomOut" class="btn-icon" title="Zoom Out (-)" >−</button>
                 <span class="zoom-label">{{ Math.round(zoomLevel * 100) }}%</span>
-                <button @click="zoomIn" class="btn-icon">＋</button>
-                <button @click="fitToWidth" class="btn-text">Fit Width</button>
+                <button @click="zoomIn" class="btn-icon" title="Zoom In (+)">+</button>
+                <button @click="fitToWidth" class="btn-text" :class="{ 'active': fitMode === 'width' }" title="Fit to Width (W)">Fit Width</button>
+                <button @click="resetZoom" class="btn-text" title="Reset Zoom (0)">100%</button>
             </div>
              <div class="pagination-controls">
-                <span class="page-counter">{{ pageNum }} / {{ pageCount }}</span>
+                <span class="page-counter">{{ totalPages }} Pages</span>
             </div>
         </div>
     </div>
@@ -543,7 +620,7 @@ const handleUploadCover = async (event: Event) => {
     <!-- Background Hero -->
     <div class="hero-bg">
         <div class="hero-image" 
-             :style="comic.cover_image_url ? { backgroundImage: `url(${comic.cover_image_url})` } : {}">
+             :style="comic.cover_image_url ? { backgroundImage: `url(${getAssetUrl(comic.cover_image_url)})` } : {}">
         </div>
         <div class="hero-overlay"></div>
     </div>
@@ -555,60 +632,207 @@ const handleUploadCover = async (event: Event) => {
             <div class="left-col">
                 <div class="cover-card">
                     <div v-if="comic.cover_image_url" class="cover-image-wrapper">
-                        <img :src="comic.cover_image_url" :alt="comic.title" class="cover-image" />
+                        <img :src="getAssetUrl(comic.cover_image_url)" :alt="comic.title" class="cover-image" />
                     </div>
                     <div v-else class="cover-placeholder">
                         <Book class="placeholder-icon" :size="48" />
                         <span class="placeholder-text">No Cover</span>
                     </div>
+
+                    <!-- Superuser Cover Edit Overlay -->
+                    <label v-if="isSuperuser" class="cover-edit-overlay" :class="{ 'uploading': uploading }">
+                        <div class="edit-icon-bg">
+                            <ImageIcon :size="20" />
+                        </div>
+                        <input type="file" accept="image/*" @change="handleUploadCover" :disabled="uploading" style="display:none;" />
+                    </label>
                 </div>
 
                 <div class="primary-actions">
-                    <button v-if="comic.pdf_url" @click="handleReadOnline" class="btn btn-read">
-                        <BookOpen class="icon" :size="20" /> Read Now
+                    <button v-if="comic.chapters && comic.chapters.length > 0" @click="openFirstChapter" class="btn btn-read">
+                        <BookOpen class="icon" :size="20" /> Start Reading
                     </button>
                     <button v-else disabled class="btn btn-disabled">
-                        No PDF Available
+                        No Chapters
                     </button>
-                    <!-- Future: Add Favorite / Download buttons here -->
                 </div>
             </div>
 
-            <!-- Right Column: Details -->
             <div class="right-col">
-                <div class="header-info">
-                    <h1 class="comic-title">{{ comic.title }}</h1>
-                    <div class="genres">
-                        <span v-for="g in comic.genres" :key="g" class="genre-tag">{{ g }}</span>
+                <!-- VIEW MODE -->
+                <div v-if="!isEditingComic">
+                    <div class="header-info">
+                        <div class="title-row">
+                            <h1 class="comic-title">{{ comic.title }}</h1>
+                            <button v-if="isSuperuser" @click="startEditingComic" class="btn-icon-sm edit-comic-btn" title="Edit Details">
+                                <Edit2 :size="18" />
+                            </button>
+                        </div>
+                        <div class="meta-row">
+                            <span class="author">By {{ comic.author }}</span>
+                            <span class="status-badge" :class="comic.status.toLowerCase()">{{ comic.status }}</span>
+                        </div>
+                        <div class="genres">
+                            <span v-for="g in comic.genres" :key="g" class="genre-tag">{{ g }}</span>
+                        </div>
+                    </div>
+
+                    <div class="description-box">
+                        <h3>Synopsis</h3>
+                        <p>{{ comic.description }}</p>
                     </div>
                 </div>
 
-                <div class="description-box">
-                    <h3>Synopsis</h3>
-                    <p>{{ comic.description }}</p>
-                </div>
-                
-                <!-- Admin Zone -->
-                <div v-if="isSuperuser" class="admin-panel">
-                    <div class="admin-header">Admin Controls</div>
-                    <div class="admin-grid">
-                        <label class="btn btn-admin" :class="{ 'uploading': uploading }">
-                            <FileText :size="18" />
-                            {{ uploading ? 'Wait...' : (comic.pdf_url ? 'Replace PDF' : 'Upload PDF') }}
-                            <input type="file" accept="application/pdf" @change="handleUploadPdf" :disabled="uploading" style="display:none;" />
-                        </label>
-                        
-                        <label class="btn btn-admin" :class="{ 'uploading': uploading }">
-                            <ImageIcon :size="18" />
-                            {{ uploading ? 'Wait...' : (comic.cover_image_url ? 'Replace Cover' : 'Upload Cover') }}
-                            <input type="file" accept="image/*" @change="handleUploadCover" :disabled="uploading" style="display:none;" />
-                        </label>
+                <!-- EDIT MODE -->
+                <div v-else class="comic-edit-form">
+                    <div class="form-group">
+                        <label>Title</label>
+                        <input type="text" v-model="editComicForm.title" class="input-field" />
+                    </div>
+                    
+                    <div class="form-row-split">
+                        <div class="form-group">
+                            <label>Author</label>
+                            <input type="text" v-model="editComicForm.author" class="input-field" />
+                        </div>
+                        <div class="form-group">
+                            <label>Status</label>
+                            <div class="status-select">
+                                <label v-for="opt in statusOptions" :key="opt.value" class="radio-label">
+                                    <input type="radio" :value="opt.value" v-model="editComicForm.status">
+                                    <span class="custom-radio">{{ opt.label }}</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
 
-                        <button @click="handleDelete" class="btn btn-admin btn-danger">
-                            <Trash2 :size="18" /> Delete
+                    <div class="form-group">
+                        <label>Genres</label>
+                        <div class="genre-select">
+                            <label v-for="genre in availableGenres" :key="genre" class="checkbox-label">
+                                <input type="checkbox" :value="genre" v-model="editComicForm.genres">
+                                <span class="custom-checkbox">{{ genre }}</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Synopsis</label>
+                        <textarea v-model="editComicForm.description" class="input-field textarea-field" rows="6"></textarea>
+                    </div>
+
+                    <div class="edit-actions-main">
+                        <button @click="saveComicDetails" :disabled="savingDetails" class="btn btn-primary">
+                            <Loader2 v-if="savingDetails" class="spinner-icon-sm" :size="16" />
+                            {{ savingDetails ? 'Saving...' : 'Save Changes' }}
+                        </button>
+                        <button @click="cancelEditComic" :disabled="savingDetails" class="btn btn-secondary">Cancel</button>
+                    </div>
+                </div>
+
+                <!-- Chapters Section -->
+                <div class="chapters-section">
+                    <div class="section-header">
+                        <h3>Chapters</h3>
+                        <button v-if="isSuperuser" @click="showAddChapter = !showAddChapter" class="btn-icon-text">
+                            <Plus :size="16" /> {{ showAddChapter ? 'Cancel' : 'Add Chapter' }}
                         </button>
                     </div>
-                    <p class="admin-hint">Max file sizes: PDF 100MB, Image 5MB</p>
+
+                    <!-- Add Chapter Form (Inline) -->
+                    <div v-if="showAddChapter" class="add-chapter-inline">
+                         <div class="form-row">
+                            <input type="number" v-model="newChapterNumber" placeholder="Num" class="input-inline num-input" step="0.1" />
+                            <input type="text" v-model="newChapterTitle" placeholder="Chapter Title" class="input-inline text-input" />
+                            <button @click="handleCreateChapter" :disabled="creatingChapter" class="btn btn-primary btn-sm">
+                                <Plus :size="16" /> Add
+                            </button>
+                        </div>
+                    </div>
+
+                    <div v-if="chapters && chapters.length > 0" class="chapter-list" :class="{ 'loading': chaptersLoading }">
+                        <div v-for="chapter in chapters" :key="chapter.id" class="chapter-item" :class="{ 'editing': editingChapterId === chapter.id }">
+                            
+                            <!-- VIEW MODE -->
+                            <template v-if="editingChapterId !== chapter.id">
+                                <div class="chapter-info">
+                                    <span class="chapter-num">Ch. {{ chapter.chapter_number }}</span>
+                                    <span class="chapter-title">{{ chapter.title }}</span>
+                                    <span v-if="chapter.page_count" class="page-count">{{ chapter.page_count }} pages</span>
+                                </div>
+                                <div class="chapter-actions">
+                                    <button v-if="chapter.image_urls && chapter.image_urls.length > 0" @click="handleReadChapter(chapter)" class="btn-sm btn-read-chapter">Read</button>
+                                    
+                                    <div v-if="isSuperuser" class="admin-chapter-actions">
+                                        <button @click="startEditingChapter(chapter)" class="btn-icon-sm" title="Edit Info">
+                                            <Edit2 :size="14" />
+                                        </button>
+
+                                        <label class="btn-icon-sm" :title="chapter.image_urls?.length ? 'Replace Images' : 'Upload Images'" :class="{ 'has-images': chapter.image_urls?.length, 'uploading': chaptersUploading.has(chapter.id) }">
+                                            <Loader2 v-if="chaptersUploading.has(chapter.id)" class="spinner-icon-sm" :size="14" />
+                                            <ImageIcon v-else :size="14" />
+                                            <input type="file" multiple accept="image/*" @change="handleChapterImagesUpload(chapter.id, $event)" :disabled="chaptersUploading.has(chapter.id)" style="display:none;" />
+                                        </label>
+                                        
+                                        <button @click="handleDeleteChapter(chapter.id)" class="btn-icon-sm text-danger" title="Delete">
+                                            <Trash2 :size="14" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </template>
+
+                            <!-- EDIT MODE -->
+                            <template v-else>
+                                <div class="chapter-edit-form">
+                                    <div class="edit-inputs">
+                                        <div class="input-group">
+                                            <label class="input-label">Num</label>
+                                            <input type="number" v-model="editForm.chapter_number" class="input-inline num-input" step="0.1" />
+                                        </div>
+                                        <div class="input-group">
+                                            <label class="input-label">Title</label>
+                                            <input type="text" v-model="editForm.title" class="input-inline text-input" />
+                                        </div>
+                                    </div>
+                                    <div class="edit-actions">
+                                        <button @click="saveChapterEdit" class="btn-sm btn-save">
+                                            <Check :size="14" /> Save
+                                        </button>
+                                        <button @click="cancelEditChapter" class="btn-sm btn-cancel">
+                                            <X :size="14" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </template>
+
+                        </div>
+                    </div>
+                    <div v-else-if="!chaptersLoading" class="no-chapters">
+                        <p>No chapters available yet.</p>
+                    </div>
+                    
+                    <!-- Pagination Controls -->
+                    <Pagination 
+                        v-if="chaptersTotalPages > 1"
+                        :current-page="chaptersPage"
+                        :total-pages="chaptersTotalPages"
+                        :scroll-to-top="false"
+                        @update:current-page="chaptersPage = $event"
+                        @change="loadChapters"
+                    />
+                </div>
+                
+                <!-- Danger Zone -->
+                <div v-if="isSuperuser" class="danger-zone">
+                    <div class="danger-header">
+                        <h4>Danger Zone</h4>
+                    </div>
+                    <div class="danger-content">
+                         <p>Once you delete a comic, there is no going back. Please be certain.</p>
+                         <button @click="handleDelete" class="btn btn-danger-outline">
+                            <Trash2 :size="16" /> Delete Comic
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -618,7 +842,7 @@ const handleUploadCover = async (event: Event) => {
   <div v-else class="not-found">
       <h2>404</h2>
       <p>Comic not found</p>
-      <RouterLink to="/" class="btn btn-primary">Go Home</RouterLink>
+      <RouterLink to="/explore" class="btn btn-primary">Go Home</RouterLink>
   </div>
 </template>
 
@@ -658,9 +882,8 @@ const handleUploadCover = async (event: Event) => {
     height: 100%;
     background-size: cover;
     background-position: center;
-    background-repeat: no-repeat;
-    filter: blur(20px) brightness(0.4);
-    transform: scale(1.1); /* Prevent blur edges */
+    filter: blur(20px);
+    transform: scale(1.1);
 }
 
 .hero-overlay {
@@ -669,67 +892,36 @@ const handleUploadCover = async (event: Event) => {
     left: 0;
     width: 100%;
     height: 100%;
-    background: linear-gradient(to bottom, rgba(18,18,18,0.8) 0%, rgba(18,18,18,1) 90%);
+    background: linear-gradient(to bottom, rgba(10,10,15,0.7) 0%, rgba(10,10,15,0.95) 100%);
 }
 
-/* Grid Layout */
+/* Comic Layout */
 .comic-layout {
     display: grid;
-    grid-template-columns: 350px 1fr;
-    gap: 4rem;
+    grid-template-columns: 300px 1fr;
+    gap: 3rem;
     align-items: start;
 }
 
-@media (max-width: 900px) {
-    .comic-layout {
-        grid-template-columns: 1fr;
-        gap: 2rem;
-    }
-    
-    .left-col {
-        max-width: 100%;
-        margin: 0 auto;
-        width: 100%;
-        /* Ensure image doesn't force overflow */
-    }
-
-    .cover-card {
-        max-width: 300px;
-        margin: 0 auto;
-    }
+.left-col {
+    position: sticky;
+    top: 100px;
 }
 
-@media (max-width: 480px) {
-    .comic-title {
-        font-size: 2.2rem;
-    }
-    
-    .content-container {
-        padding: 2rem 1rem 4rem 1rem;
-    }
-}
-
-/* Cover Image */
+/* Cover Card */
 .cover-card {
+    position: relative;
     border-radius: 16px;
     overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-    transition: transform 0.3s ease;
-    background: #1e1e1e;
-    aspect-ratio: 2/3;
-    position: relative;
-    width: 100%;
-}
-
-.cover-card:hover {
-    transform: translateY(-5px);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    margin-bottom: 1.5rem;
+    background: var(--surface-highlight);
 }
 
 .cover-image-wrapper {
     width: 100%;
-    height: 100%;
-    margin: 0;
-    padding: 0;
+    aspect-ratio: 2/3;
+    overflow: hidden;
 }
 
 .cover-image {
@@ -741,554 +933,1105 @@ const handleUploadCover = async (event: Event) => {
 
 .cover-placeholder {
     width: 100%;
-    height: 100%;
+    aspect-ratio: 2/3;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
-    color: #666;
-    border: 2px dashed #444;
-}
-
-.placeholder-icon {
-    font-size: 4rem;
-    margin-bottom: 1rem;
-    opacity: 0.5;
-}
-
-.placeholder-text {
-    font-weight: 600;
-    font-size: 1.2rem;
-}
-
-/* Actions */
-.primary-actions {
-    margin-top: 1.5rem;
-    display: flex;
-    flex-direction: column;
+    background: linear-gradient(135deg, #2d3436, #636e72);
+    color: rgba(255,255,255,0.3);
     gap: 1rem;
 }
 
-.btn-read {
-    background: linear-gradient(135deg, var(--primary) 0%, #4a90e2 100%);
-    color: white;
-    font-size: 1.1rem;
-    font-weight: 700;
-    padding: 1rem;
-    border-radius: 12px;
-    border: none;
-    cursor: pointer;
-    transition: all 0.2s;
+.placeholder-text {
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+/* Cover Edit Overlay */
+.cover-edit-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.6);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.8rem;
-    box-shadow: 0 4px 20px rgba(138, 180, 248, 0.3);
+    opacity: 0;
+    transition: opacity 0.3s;
+    cursor: pointer;
+}
+
+.cover-card:hover .cover-edit-overlay {
+    opacity: 1;
+}
+
+.edit-icon-bg {
+    background: var(--primary);
+    padding: 1rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #000;
+}
+
+.cover-edit-overlay.uploading {
+    opacity: 1;
+    cursor: wait;
+}
+
+/* Primary Actions */
+.primary-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.btn-read {
+    background: linear-gradient(135deg, var(--primary), #6366f1);
+    color: #000;
+    font-weight: 700;
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-size: 1.1rem;
 }
 
 .btn-read:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(138, 180, 248, 0.5);
-    filter: brightness(1.1);
+    box-shadow: 0 10px 30px rgba(129, 140, 248, 0.4);
 }
 
 .btn-disabled {
     background: rgba(255,255,255,0.1);
-    color: #888;
+    color: rgba(255,255,255,0.4);
     cursor: not-allowed;
-    border: 1px solid rgba(255,255,255,0.05);
-    padding: 1rem;
-    border-radius: 12px;
-    text-align: center;
 }
 
-/* Right Column Info */
+/* Right Column */
+.header-info {
+    margin-bottom: 2rem;
+}
+
 .comic-title {
-    font-size: 3.5rem;
+    font-size: 3rem;
     font-weight: 800;
-    line-height: 1.1;
     margin: 0 0 1rem 0;
-    background: linear-gradient(90deg, #fff 0%, #bbb 100%);
-    background-clip: text;
+    line-height: 1.1;
+    background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
-    text-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+.meta-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.author {
+    color: var(--text-muted);
+    font-size: 1.1rem;
+}
+
+.status-badge {
+    padding: 0.4rem 1rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.status-badge.ongoing {
+    background: rgba(52, 211, 153, 0.2);
+    color: #34d399;
+}
+
+.status-badge.completed {
+    background: rgba(96, 165, 250, 0.2);
+    color: #60a5fa;
+}
+
+.status-badge.hiatus {
+    background: rgba(251, 191, 36, 0.2);
+    color: #fbbf24;
 }
 
 .genres {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.8rem;
-    margin-bottom: 2.5rem;
+    gap: 0.6rem;
 }
 
 .genre-tag {
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
     padding: 0.4rem 1rem;
-    border-radius: 50px;
-    font-size: 0.9rem;
+    background: rgba(255,255,255,0.1);
+    border-radius: 20px;
+    font-size: 0.85rem;
     font-weight: 600;
-    letter-spacing: 0.05em;
-    color: #ddd;
-    text-transform: uppercase;
+    border: 1px solid rgba(255,255,255,0.2);
 }
 
+/* Description Box */
 .description-box {
-    margin-bottom: 2.5rem;
-    background: rgba(255, 255, 255, 0.03);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
     border-radius: 16px;
-    padding: 2rem;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    backdrop-filter: blur(10px);
 }
 
 .description-box h3 {
-    font-size: 1.1rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 1rem;
+    margin: 0 0 1rem 0;
+    font-size: 1.2rem;
     color: var(--primary);
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    gap: 0.8rem;
 }
 
 .description-box p {
-    font-size: 1.05rem;
+    margin: 0;
     line-height: 1.7;
-    color: #e0e0e0;
-    white-space: pre-wrap;
-    font-weight: 300;
+    color: var(--text-muted);
 }
 
-/* Admin Panel */
-.admin-panel {
-    background: rgba(30, 30, 30, 0.6);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+/* Chapters Section */
+.chapters-section {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.1);
     border-radius: 16px;
     padding: 1.5rem;
+    margin-bottom: 2rem;
 }
 
-.admin-header {
-    font-size: 0.85rem;
-    text-transform: uppercase;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    color: #666;
-    margin-bottom: 1rem;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-    padding-bottom: 0.5rem;
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
 }
 
-.admin-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 1rem;
+.section-header h3 {
+    margin: 0;
+    font-size: 1.5rem;
 }
 
-.btn-admin {
+.btn-icon-text {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    color: white;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-icon-text:hover {
+    background: rgba(255,255,255,0.15);
+}
+
+/* Add Chapter Form */
+.add-chapter-inline {
     background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
-    color: #ccc;
-    padding: 0.8rem;
+    padding: 1rem;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+}
+
+.form-row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.input-inline {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: white;
+    padding: 0.6rem;
     border-radius: 8px;
     font-size: 0.9rem;
+}
+
+.input-inline:focus {
+    outline: none;
+    border-color: var(--primary);
+    background: rgba(255,255,255,0.15);
+}
+
+.num-input {
+    width: 80px;
+}
+
+.text-input {
+    flex: 1;
+}
+
+/* Chapter List */
+.chapter-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+
+
+.chapter-item {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.2s;
+}
+
+.chapter-item:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.2);
+}
+
+.chapter-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex: 1;
+    min-width: 0; /* Allow shrinking below content size */
+    margin-right: 1rem;
+}
+
+.chapter-num {
+    font-weight: 700;
+    color: var(--primary);
+    min-width: 60px;
+    white-space: nowrap;
+}
+
+.chapter-title {
+    flex: 1;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.page-count {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.chapter-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-shrink: 0; /* Prevent actions from shrinking */
+}
+
+.admin-chapter-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-sm {
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    border-radius: 8px;
+}
+
+.btn-read-chapter {
+    background: var(--primary);
+    color: #000;
+    font-weight: 600;
+}
+
+.btn-icon-sm {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 0.5rem;
+    border-radius: 6px;
+    color: white;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    transition: background 0.2s;
+    transition: all 0.2s;
 }
 
-.btn-admin:hover {
+.btn-icon-sm:hover {
+    background: rgba(255,255,255,0.15);
+}
+
+.btn-icon-sm.has-images {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.btn-icon-sm.uploading {
+    cursor: wait;
+}
+
+.text-danger {
+    color: #ef4444;
+}
+
+.text-danger:hover {
+    background: rgba(239, 68, 68, 0.2);
+}
+
+/* Edit Form */
+.chapter-edit-form {
+    display: flex;
+    gap: 1rem;
+    width: 100%;
+    align-items: center;
+}
+
+.edit-inputs {
+    display: flex;
+    gap: 0.75rem;
+    flex: 1;
+}
+
+.input-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.input-label {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.edit-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-save {
+    background: var(--primary);
+    color: #000;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.btn-cancel {
     background: rgba(255,255,255,0.1);
     color: white;
-    border-color: rgba(255,255,255,0.2);
-}
-
-.btn-danger {
-    background: rgba(207, 102, 121, 0.1);
-    border-color: rgba(207, 102, 121, 0.3);
-    color: #cf6679;
-}
-
-.btn-danger:hover {
-    background: rgba(207, 102, 121, 0.2);
-    color: white;
-    border-color: #cf6679;
-}
-
-.admin-hint {
-    font-size: 0.8rem;
-    color: #555;
-    margin-top: 1rem;
-    text-align: center;
-}
-
-/* Loading & Error */
-.loading, .not-found {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    min-height: 50vh;
-    color: #888;
+    gap: 0.3rem;
 }
 
-.spinner-icon {
-    width: 40px;
-    height: 40px;
-    color: var(--primary);
-    animation: spin 1s linear infinite;
-    margin-bottom: 1rem;
+.no-chapters {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 2rem;
 }
 
-/* Reader Styles (Reused & Tweaked) */
-/* Reader Styles (Premium) */
+/* Danger Zone */
+.danger-zone {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+.danger-header {
+    background: rgba(239, 68, 68, 0.2);
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.danger-header h4 {
+    margin: 0;
+    color: #ef4444;
+    font-size: 1.1rem;
+}
+
+.danger-content {
+    padding: 1.5rem;
+}
+
+.danger-content p {
+    margin: 0 0 1rem 0;
+    color: var(--text-muted);
+}
+
+.btn-danger-outline {
+    background: transparent;
+    border: 2px solid #ef4444;
+    color: #ef4444;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn-danger-outline:hover {
+    background: rgba(239, 68, 68, 0.2);
+}
+
+/* Reading Overlay */
+/* Reading Overlay */
 .reading-overlay {
     position: fixed;
     top: 0;
     left: 0;
     width: 100vw;
     height: 100vh;
-    background: #000;
+    background: #0a0a0f; /* Deep dark background */
     z-index: 9999;
     display: flex;
     flex-direction: column;
 }
 
 .reader-header {
+    background: rgba(20, 20, 30, 0.75);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 0.75rem 1.5rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.8rem 1.5rem;
-    background: rgba(20, 20, 20, 0.85);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     position: fixed;
     top: 1.5rem;
     left: 50%;
     transform: translateX(-50%);
-    width: auto;
-    min-width: 320px;
-    max-width: 90vw;
-    z-index: 10;
-    height: auto;
+    width: 90%;
+    max-width: 800px;
+    z-index: 100;
     border-radius: 50px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-    box-sizing: border-box;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    gap: 1rem;
 }
 
 .reader-title {
     margin: 0;
-    color: #e0e0e0;
-    font-size: 1rem;
+    font-size: 1.2rem;
     font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 200px;
+}
+
+.reader-controls-center {
+    display: flex;
+    gap: 1rem;
+}
+
+.btn-icon {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: white;
+    padding: 0.6rem;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-icon:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.btn-icon:active {
+    transform: translateY(0);
+}
+
+.btn-icon:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.close-btn {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+.close-btn:hover {
+    background: rgba(239, 68, 68, 0.3);
 }
 
 .reader-content {
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    background: #050505;
-    display: flex;
-    justify-content: center;
-    padding-top: 100px;
-    padding-bottom: 120px;
-    -webkit-overflow-scrolling: touch;
+    position: relative;
 }
 
-.reader-footer {
+/* Watermark overlay */
+.watermark-overlay {
     position: fixed;
-    bottom: 2rem;
+    top: 50%;
     left: 50%;
-    transform: translateX(-50%);
-    background: rgba(20, 20, 20, 0.85);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    padding: 0.8rem 2rem;
-    border-radius: 50px;
+    transform: translate(-50%, -50%) rotate(-45deg);
+    pointer-events: none;
+    z-index: 50;
+    opacity: 0.08;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.watermark-text {
+    font-size: 3rem;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+    white-space: nowrap;
+    letter-spacing: 0.5rem;
+}
+
+.scroll-container {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.3) transparent;
+}
+
+.scroll-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.scroll-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.scroll-container::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.3);
+    border-radius: 4px;
+}
+
+.single-page-reader {
     display: flex;
-    justify-content: center;
     align-items: center;
-    gap: 2rem;
-    z-index: 10;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    justify-content: center;
+    width: 100%;
+    min-height: 100%;
+    padding: 2rem;
+}
+
+.vertical-reader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1rem 0;
+}
+
+.comic-page-image {
+    display: block;
+    transition: transform 0.2s ease;
+    cursor: grab;
+}
+
+.comic-page-image:active {
+    cursor: grabbing;
+}
+
+/* Anti-piracy protection for images */
+.protected-image {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    -webkit-touch-callout: none;
+    pointer-events: auto;
+    -webkit-user-drag: none;
+    -khtml-user-drag: none;
+    -moz-user-drag: none;
+    -o-user-drag: none;
+}
+
+/* Fit modes */
+.comic-page-image.fit-width {
+    width: 100%;
     height: auto;
+    max-width: 100%;
+}
+
+.comic-page-image.fit-height {
+    width: auto;
+    height: 100%;
+    max-height: calc(100vh - 200px);
+}
+
+.comic-page-image.manual-zoom {
+    max-width: none;
+    max-height: none;
+}
+
+.vertical-reader .comic-page-image {
+    width: 100%;
+    height: auto;
+    max-width: 100%;
+}
+
+.vertical-reader .comic-page-image.manual-zoom {
     width: auto;
 }
 
-/* Reader Controls */
-.zoom-controls, .pagination-controls {
+.reader-footer {
+    background: rgba(20, 20, 30, 0.75);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 0.75rem 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: auto;
+    max-width: 90%;
+    z-index: 100;
+    border-radius: 50px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.zoom-controls {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 0.75rem;
 }
 
-.btn-icon {
-    background: transparent;
-    border: none;
-    color: #fff;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
-    font-size: 1.2rem;
-}
-
-.btn-icon:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.15);
-    transform: scale(1.1);
-    box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
-}
-
-.btn-icon:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-}
-
-.close-btn {
-    color: #aaa;
-}
-
-.close-btn:hover {
-    background: rgba(255, 59, 48, 0.15);
-    color: #ff3b30;
+.zoom-label {
+    font-weight: 600;
+    min-width: 60px;
+    text-align: center;
+    font-size: 0.9rem;
 }
 
 .btn-text {
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #ccc;
-    font-size: 0.75rem;
-    padding: 0.4rem 0.8rem;
-    border-radius: 12px;
+    color: rgba(255, 255, 255, 0.8);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
     cursor: pointer;
-    transition: all 0.2s;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
     font-weight: 500;
 }
 
 .btn-text:hover {
     background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.25);
     color: #fff;
-    border-color: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
 }
 
-.zoom-label, .page-counter {
-    font-family: 'JetBrains Mono', monospace; /* Monospace for steady numbers */
-    color: #aaa;
-    font-size: 0.9rem;
-    min-width: 40px;
-    text-align: center;
-    font-weight: 500;
-    user-select: none;
+.btn-text:active {
+    transform: translateY(0);
+}
+
+.btn-text.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #000;
+    font-weight: 700;
+    box-shadow: 0 0 15px rgba(var(--primary-rgb), 0.3);
+}
+
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
 }
 
 .page-counter {
-    min-width: 80px;
+    font-weight: 600;
+    min-width: 100px;
+    text-align: center;
     background: rgba(0, 0, 0, 0.3);
-    padding: 0.3rem 0.8rem;
-    border-radius: 20px;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.pdf-wrapper {
-    box-shadow: 0 0 50px rgba(0,0,0,0.8);
-    transition: width 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-}
-
-/* Vertical Reader */
-.vertical-reader {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0; 
-    width: 100%;
-}
-
-/* Horizontal Reader */
-.horizontal-reader {
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    width: 100%;
-    min-height: 70vh;
-}
-
-.pdf-loading {
+/* Loading & Not Found */
+.loading, .not-found {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 50vh;
-    color: #888;
+    min-height: 80vh;
+    gap: 1rem;
 }
 
-.pdf-page {
-    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-    background: white; 
-    margin-bottom: 0;
-    display: block;
+.spinner-icon {
+    animation: spin 1s linear infinite;
 }
 
-.end-message {
-    color: #fff;
-    padding: 2rem;
-    font-size: 1.1rem;
-    opacity: 0.7;
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
 }
 
-.error-message {
-    color: #cf6679;
-    margin: 2rem 0;
+.spinner-icon-sm {
+    animation: spin 1s linear infinite;
 }
 
-.reader-controls-center {
-    flex: 1;
-    display: flex;
-    justify-content: center;
-}
-
-.page-wrapper {
-    min-height: 50vh; /* Prevent collapse before load */
-    width: 100%;
-    display: flex;
-    justify-content: center;
-}
-
-.pdf-viewer {
-    box-shadow: 0 0 30px rgba(0,0,0,0.5);
-    background: white;
-    min-height: 50vh;
-    display: block;
-}
-
-/* Mobile Responsiveness */
-@media (max-width: 1024px) {
-    .content-container {
-        padding: 2rem;
-    }
-
-    .comic-layout {
-        gap: 3rem;
-    }
-}
-
-@media (max-width: 900px) {
+/* Responsive */
+@media (max-width: 968px) {
     .comic-layout {
         grid-template-columns: 1fr;
         gap: 2rem;
     }
-    
+
     .left-col {
-        max-width: 400px;
-        margin: 0 auto;
-        width: 100%;
-    }
-
-    .cover-card {
+        position: static;
         max-width: 300px;
         margin: 0 auto;
-    }
-    
-    .primary-actions {
-        max-width: 300px;
-        margin: 1.5rem auto 0;
-        width: 100%;
-    }
-
-    .hero-bg {
-        display: none; /* Disable fixed background on mobile to prevent bleed */
-    }
-}
-
-@media (max-width: 768px) {
-    .content-container {
-        padding: 1.5rem 1rem;
-        overflow-x: hidden;
     }
 
     .comic-title {
-        font-size: 2.5rem;
-        word-wrap: break-word;
+        font-size: 2rem;
+    }
+}
+
+@media (max-width: 640px) {
+    .content-container {
+        padding: 2rem 1rem;
     }
 
-    .admin-grid {
-        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    .reader-header, .reader-footer {
+        padding: 0.6rem 0.8rem;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        justify-content: center;
+        width: 95%;
+        max-width: none;
+        border-radius: 20px;
     }
-
-    /* Reader Mobile Styles */
-    .reader-header {
-        width: 95vw;
-        padding: 0.8rem 1rem;
-        top: 1rem;
-        box-sizing: border-box;
-    }
-
-    .reader-title {
-        max-width: 150px;
-        font-size: 0.9rem;
-    }
-
-    .reader-content {
-        padding-top: 80px;
-        padding-bottom: 140px;
-    }
-
+    
     .reader-footer {
-        width: 95vw;
-        padding: 0.8rem 1rem;
         bottom: 1rem;
-        flex-direction: column;
-        gap: 1rem;
-        box-sizing: border-box;
     }
     
     .zoom-controls {
-        width: 100%;
+        gap: 0.5rem;
+    }
+}
+
+/* Edit Form Styles */
+.title-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.edit-comic-btn {
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+
+.title-row:hover .edit-comic-btn {
+    opacity: 1;
+}
+
+.comic-edit-form {
+    background: rgba(255,255,255,0.05);
+    padding: 2rem;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.1);
+    margin-bottom: 2rem;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.form-group label {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.input-field {
+    background: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    color: white;
+    font-size: 1rem;
+    transition: border-color 0.2s;
+}
+
+.input-field:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.form-row-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+.select-field {
+    width: 100%;
+    cursor: pointer;
+    appearance: none;
+}
+
+.select-field option {
+    background: #1a1a2e;
+    color: white;
+}
+
+.edit-actions-main {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.btn-primary {
+    background: var(--primary);
+    color: #000;
+    font-weight: 600;
+    padding: 0.8rem 1.5rem;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+}
+
+.btn-secondary {
+    background: rgba(255,255,255,0.1);
+    color: white;
+    font-weight: 600;
+    padding: 0.8rem 1.5rem;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+}
+
+.btn-secondary:hover {
+    background: rgba(255,255,255,0.15);
+}
+
+@media (max-width: 640px) {
+    .reader-header {
+        top: 1rem;
+        bottom: auto;
+    }
+
+    .reader-title {
+        font-size: 0.9rem;
+        flex: 1;
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .reader-content {
+        padding: 0.5rem;
+    }
+
+    .single-page-reader {
+        padding: 1rem;
+    }
+
+    .zoom-controls {
+        gap: 0.4rem;
+        flex-wrap: wrap;
         justify-content: center;
+        width: 100%;
     }
     
     .pagination-controls {
+        gap: 0.75rem;
+    }
+
+    .btn-text {
+        padding: 0.4rem 0.6rem;
+        font-size: 0.7rem;
+    }
+    
+    .btn-icon {
+        padding: 0.5rem;
+    }
+
+    .zoom-label {
+        min-width: 45px;
+        font-size: 0.8rem;
+    }
+    
+    .page-counter {
+        min-width: 80px;
+        font-size: 0.85rem;
+    }
+
+    .chapter-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+        padding: 0.85rem;
+    }
+    
+    .chapter-info {
+        margin-right: 0;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .chapter-actions {
         width: 100%;
-        justify-content: center;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+    }
+    
+    .admin-chapter-actions {
+        flex: 1;
+        justify-content: flex-end;
     }
 }
 
 @media (max-width: 480px) {
+    .content-container {
+        padding: 1.5rem 0.75rem;
+    }
+    
     .comic-title {
-        font-size: 2rem;
+        font-size: 1.75rem;
     }
+    
+    .left-col {
+        max-width: 100%;
+    }
+    
+    .btn-sm {
+        padding: 0.4rem 0.75rem;
+        font-size: 0.8rem;
+    }
+    
+    .input-inline {
+        padding: 0.5rem;
+        font-size: 0.85rem;
+    }
+    
+    .num-input {
+        width: 70px;
+    }
+}
 
-    .genre-tag {
-        font-size: 0.75rem;
-        padding: 0.3rem 0.6rem;
-    }
+/* Status Radio Buttons */
+.status-select {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
 
-    .admin-grid {
-        grid-template-columns: 1fr; /* Stack buttons on very small screens */
-    }
+.radio-label {
+    position: relative;
+    cursor: pointer;
+}
 
-    .btn-read {
-        font-size: 1rem;
-        padding: 0.8rem;
-    }
+.radio-label input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.custom-radio {
+    display: inline-block;
+    padding: 0.6rem 1.2rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50px;
+    font-size: 0.9rem;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    color: #aaa;
+    user-select: none;
+}
+
+.radio-label:hover .custom-radio {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #fff;
+}
+
+.radio-label input:checked + .custom-radio {
+    background: var(--primary);
+    color: #121212;
+    border-color: var(--primary);
+    box-shadow: 0 4px 15px rgba(138, 180, 248, 0.4);
+    font-weight: 600;
+}
+
+/* Chips for Genres */
+.genre-select {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.checkbox-label {
+    position: relative;
+    cursor: pointer;
+}
+
+.checkbox-label input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.custom-checkbox {
+    display: inline-block;
+    padding: 0.6rem 1.2rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50px;
+    font-size: 0.9rem;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    color: #aaa;
+    user-select: none;
+}
+
+.checkbox-label:hover .custom-checkbox {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #fff;
+}
+
+.checkbox-label input:checked + .custom-checkbox {
+    background: var(--primary);
+    color: #121212;
+    border-color: var(--primary);
+    box-shadow: 0 4px 15px rgba(138, 180, 248, 0.4);
+    font-weight: 600;
 }
 </style>

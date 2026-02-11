@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, reactive } from 'vue';
 import { Search } from 'lucide-vue-next';
+import Pagination from '../components/Pagination.vue';
 import { getComics, bulkDeleteComics, type Comic, type ComicListResponse } from '../api/comics';
 import { useAuth } from '../store';
 import { API_URL } from '../api/client';
@@ -10,11 +11,19 @@ const comics = ref<Comic[]>([]);
 const search = ref('');
 const page = ref(1);
 const totalPages = ref(1);
+const totalComics = ref(0);
+const hasNextPage = ref(false);
+const hasPrevPage = ref(false);
 const loading = ref(false);
+const error = ref<string | null>(null);
+const deleting = ref(false);
 const selectedComics = reactive(new Set<number>());
+
+let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 const fetchComics = async () => {
     loading.value = true;
+    error.value = null;
     selectedComics.clear(); // Clear selection on navigate/refresh
     try {
         const response: ComicListResponse = await getComics(page.value, 12, search.value);
@@ -28,9 +37,13 @@ const fetchComics = async () => {
 
         comics.value = response.items;
         totalPages.value = response.total_pages;
-    } catch (e) {
-        console.error(e);
-        // If error occurs, maybe reset to page 1 if safe?
+        totalComics.value = response.total_comics;
+        hasNextPage.value = response.next_page_available;
+        hasPrevPage.value = response.prev_page_available;
+    } catch (e: any) {
+        console.error('Failed to fetch comics:', e);
+        error.value = e.response?.data?.detail || 'Failed to load comics. Please try again.';
+        comics.value = [];
     } finally {
         loading.value = false;
     }
@@ -64,21 +77,41 @@ const toggleSelectAll = () => {
 const handleBulkDelete = async () => {
     if (selectedComics.size === 0) return;
     
-    if (confirm(`Are you sure you want to delete ${selectedComics.size} comics?`)) {
+    if (confirm(`Are you sure you want to delete ${selectedComics.size} comic${selectedComics.size > 1 ? 's' : ''}? This action cannot be undone.`)) {
+        deleting.value = true;
+        error.value = null;
         try {
             await bulkDeleteComics(Array.from(selectedComics));
             selectedComics.clear();
-            fetchComics(); // Refresh list
-        } catch (e) {
-            alert("Failed to delete comics.");
-            console.error(e);
+            await fetchComics(); // Refresh list
+        } catch (e: any) {
+            console.error('Failed to delete comics:', e);
+            error.value = e.response?.data?.detail || 'Failed to delete comics. Please try again.';
+        } finally {
+            deleting.value = false;
         }
     }
 };
 
-// Debounce search could be added here
-watch([page, search], () => {
+// Watch page changes
+watch(page, () => {
     fetchComics();
+});
+
+// Debounced search - reset to page 1 when search changes
+watch(search, (newSearch, oldSearch) => {
+    if (searchTimeout) {
+        clearTimeout(searchTimeout);
+    }
+    
+    searchTimeout = setTimeout(() => {
+        // Reset to page 1 when search changes
+        if (page.value !== 1) {
+            page.value = 1;
+        } else {
+            fetchComics();
+        }
+    }, 300); // 300ms debounce
 });
 
 onMounted(() => {
@@ -96,6 +129,14 @@ const getGenreBadgeColor = (genre: string) => {
         'Mystery': '#2e86de',
     };
     return colors[genre] || '#8395a7';
+};
+
+const getImageUrl = (url: string | null) => {
+    if (!url) return '';
+    if (url.startsWith('http')) return url;
+    // Remove leading slash if both have it to avoid double slash, simpler:
+    // API_URL usually doesn't end with slash based on client.ts default
+    return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
 };
 </script>
 
@@ -116,29 +157,84 @@ const getGenreBadgeColor = (genre: string) => {
         </div>
     </div>
 
-    <div v-if="loading" class="loading">Loading...</div>
+    <div v-if="loading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div v-for="n in 8" :key="n" class="bg-[var(--surface-highlight)] rounded-2xl overflow-hidden border border-[rgba(255,255,255,0.05)] animate-pulse">
+            <div class="h-[160px] w-full bg-gray-800"></div>
+            <div class="p-5 flex flex-col gap-4">
+                <div class="flex justify-between items-start">
+                    <div class="w-full">
+                        <div class="h-5 bg-gray-700 rounded w-3/4 mb-2"></div>
+                        <div class="flex gap-2">
+                            <div class="h-3 bg-gray-800 rounded w-1/3"></div>
+                            <div class="h-3 bg-gray-800 rounded w-10"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex gap-2 flex-wrap">
+                    <div class="h-5 bg-gray-700 rounded-full w-16"></div>
+                    <div class="h-5 bg-gray-700 rounded-full w-20"></div>
+                    <div class="h-5 bg-gray-700 rounded-full w-14"></div>
+                </div>
+                <div class="space-y-2">
+                    <div class="h-3 bg-gray-800 rounded w-full"></div>
+                    <div class="h-3 bg-gray-800 rounded w-full"></div>
+                    <div class="h-3 bg-gray-800 rounded w-2/3"></div>
+                </div>
+                <div class="flex gap-3 mt-auto pt-2">
+                    <div class="h-10 bg-gray-700 rounded-lg flex-1"></div>
+                    <div class="h-10 bg-gray-700 rounded-lg flex-1"></div>
+                </div>
+            </div>
+        </div>
+    </div>
     
     <div v-else>
+        <!-- Error Message -->
+        <div v-if="error" class="error-message">
+            <span>⚠️ {{ error }}</span>
+            <button @click="fetchComics" class="btn btn-secondary">Retry</button>
+        </div>
+
         <div v-if="isSuperuser" class="admin-toolbar">
             <div class="checkbox-wrapper select-all">
                 <label>
                     <input type="checkbox" 
                         :checked="comics.length > 0 && comics.every(c => selectedComics.has(c.id))"
                         @change="toggleSelectAll"
+                        :disabled="comics.length === 0"
                     />
                     Select All
                 </label>
             </div>
 
-            <button v-if="selectedComics.size > 0" @click="handleBulkDelete" class="btn btn-danger">
-                Delete Selected ({{ selectedComics.size }})
+            <button 
+                v-if="selectedComics.size > 0" 
+                @click="handleBulkDelete" 
+                class="btn btn-danger"
+                :disabled="deleting"
+            >
+                {{ deleting ? 'Deleting...' : `Delete Selected (${selectedComics.size})` }}
             </button>
             <div class="selection-info" v-if="selectedComics.size > 0">
                 <a href="#" @click.prevent="selectedComics.clear()">Clear Selection</a>
             </div>
         </div>
 
-        <div class="grid">
+        <div class="results-info" v-if="totalComics > 0 && !error">
+            Showing {{ comics.length }} of {{ totalComics }} comics
+        </div>
+
+        <!-- Empty State -->
+        <div v-if="comics.length === 0 && !error && !loading" class="empty-state">
+            <div class="empty-icon">📚</div>
+            <h3>{{ search ? 'No comics found' : 'No comics yet' }}</h3>
+            <p>{{ search ? 'Try adjusting your search terms' : 'Start by creating your first comic!' }}</p>
+            <RouterLink v-if="isSuperuser && !search" to="/create" class="btn btn-primary">
+                Create Comic
+            </RouterLink>
+        </div>
+
+        <div class="grid" v-if="comics.length > 0">
             <div 
                 v-for="comic in comics" 
                 :key="comic.id" 
@@ -147,7 +243,7 @@ const getGenreBadgeColor = (genre: string) => {
                 @click="toggleSelection(comic.id)"
             >
                 <div class="card-image" v-if="comic.cover_image_url">
-                    <img :src="comic.cover_image_url" :alt="comic.title" loading="lazy" />
+                    <img :src="getImageUrl(comic.cover_image_url)" :alt="comic.title" loading="lazy" />
                 </div>
                 <div class="card-image placeholder" v-else>
                     <span>{{ comic.title.charAt(0) }}</span>
@@ -155,7 +251,13 @@ const getGenreBadgeColor = (genre: string) => {
 
                 <div class="card-content">
                     <div class="card-header">
-                        <h3>{{ comic.title }}</h3>
+                        <div class="header-main">
+                            <h3>{{ comic.title }}</h3>
+                            <div class="meta-info">
+                                <span class="card-author">by {{ comic.author }}</span>
+                                <span class="card-status" :class="comic.status.toLowerCase()">{{ comic.status }}</span>
+                            </div>
+                        </div>
                         <div v-if="isSuperuser" class="checkbox-wrapper">
                             <input 
                                 type="checkbox" 
@@ -180,11 +282,12 @@ const getGenreBadgeColor = (genre: string) => {
         </div>
     </div>
 
-    <div class="pagination" v-if="totalPages > 1">
-        <button :disabled="page <= 1" @click="page--">Previous</button>
-        <span>Page {{ page }} of {{ totalPages }}</span>
-        <button :disabled="page >= totalPages" @click="page++">Next</button>
-    </div>
+    <Pagination 
+        v-if="totalPages > 1"
+        :current-page="page"
+        :total-pages="totalPages"
+        @update:current-page="page = $event"
+    />
   </div>
 </template>
 
@@ -279,8 +382,8 @@ const getGenreBadgeColor = (genre: string) => {
 /* Grid Layout */
 .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 2rem;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1.5rem;
 }
 
 /* Comic Card */
@@ -309,10 +412,7 @@ const getGenreBadgeColor = (genre: string) => {
 }
 
 .card-content {
-    padding: 1.8rem;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
+    padding: 1.2rem;
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -320,7 +420,7 @@ const getGenreBadgeColor = (genre: string) => {
 }
 
 .card-image {
-    height: 200px;
+    height: 160px;
     width: 100%;
     position: relative;
     overflow: hidden;
@@ -357,7 +457,7 @@ const getGenreBadgeColor = (genre: string) => {
 
 h3 {
     margin: 0;
-    font-size: 1.4rem;
+    font-size: 1.1rem;
     font-weight: 700;
     line-height: 1.3;
 }
@@ -385,9 +485,9 @@ h3 {
 /* Description */
 .description {
     color: var(--text-muted);
-    font-size: 0.95rem;
-    line-height: 1.6;
-    margin-bottom: 1.8rem;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    margin-bottom: 1.2rem;
     display: -webkit-box;
     -webkit-line-clamp: 3;
     line-clamp: 3;
@@ -409,47 +509,7 @@ h3 {
     flex: 1;
 }
 
-/* Pagination */
-/* Pagination - Floating Navigation */
-.pagination {
-    position: fixed;
-    bottom: 2rem;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(20, 20, 20, 0.8);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    padding: 0.8rem 2rem;
-    border-radius: 50px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 1.5rem;
-    z-index: 900;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-    margin: 0;
-}
 
-.pagination button {
-    padding: 0.8rem 1.5rem;
-    background: var(--surface-highlight);
-    border: 1px solid var(--glass-border);
-    color: white;
-    border-radius: 50px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.pagination button:hover:not(:disabled) {
-    background: rgba(255,255,255,0.1);
-    transform: translateY(-2px);
-}
-
-.pagination button:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-}
 
 /* Admin Toolbar */
 .admin-toolbar {
@@ -472,6 +532,20 @@ h3 {
     background: rgba(255, 255, 255, 0.05);
 }
 
+/* Results Info */
+.results-info {
+    color: var(--text-muted);
+    margin-bottom: 2rem;
+    font-size: 0.95rem;
+    padding: 0 0.5rem;
+    border-left: 3px solid var(--primary);
+    padding-left: 1rem;
+}
+
+
+
+
+
 /* Custom Checkboxes */
 .checkbox-wrapper {
     position: relative;
@@ -481,11 +555,11 @@ h3 {
 .checkbox-wrapper input[type="checkbox"] {
     -webkit-appearance: none;
     appearance: none;
-    width: 24px;
-    height: 24px;
+    width: 18px;
+    height: 18px;
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 6px;
+    border-radius: 4px;
     cursor: pointer;
     position: relative;
     transition: all 0.2s ease;
@@ -500,7 +574,7 @@ h3 {
     content: '✔';
     position: absolute;
     color: #000;
-    font-size: 14px;
+    font-size: 12px;
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
@@ -537,6 +611,13 @@ h3 {
 }
 
 @media (max-width: 768px) {
+    .desktop-only {
+        display: none;
+    }
+    .mobile-only {
+        display: inline;
+    }
+
     .home-container {
         padding-bottom: 6rem;
         padding-left: 1rem;
@@ -546,13 +627,13 @@ h3 {
     .header-section {
         flex-direction: column;
         align-items: flex-start;
-        padding: 0 1rem;
-        margin-bottom: 2.5rem;
-        gap: 1.5rem;
+        padding: 0;
+        margin-bottom: 2rem;
+        gap: 1.25rem;
     }
 
     .header-title h1 {
-        font-size: 2.5rem;
+        font-size: 2.2rem;
     }
 
     .search-wrapper {
@@ -560,15 +641,15 @@ h3 {
     }
 
     .grid {
-        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-        gap: 1.5rem;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 1.25rem;
     }
 
     .admin-toolbar {
         flex-direction: column;
-        gap: 1rem;
+        gap: 0.85rem;
         align-items: stretch;
-        padding: 1rem;
+        padding: 0.85rem;
     }
 
     .admin-toolbar > * {
@@ -577,39 +658,140 @@ h3 {
 
     .btn-group {
         flex-direction: column;
-        gap: 0.5rem;
+        gap: 0.6rem;
     }
 
     .btn-group .btn {
         width: 100%;
     }
 
-    .pagination {
-        flex-direction: column;
-        gap: 0.8rem;
-        padding: 1rem;
-    }
 
-    .pagination button {
-        width: 100%;
-    }
 }
 
 @media (max-width: 480px) {
-    h1 {
-        font-size: 1.75rem;
+    .header-title h1 {
+        font-size: 1.8rem;
     }
 
     .card-content {
-        padding: 1.2rem;
+        padding: 1rem;
     }
 
     .card-header h3 {
-        font-size: 1.1rem;
+        font-size: 1rem;
     }
 
     .description {
-        font-size: 0.85rem;
+        font-size: 0.8rem;
+    }
+
+    .genre-tag {
+        font-size: 0.65rem;
+        padding: 0.25rem 0.7rem;
     }
 }
+
+
+/* Card Metadata Styling */
+.header-main {
+    flex: 1;
+    min-width: 0;
+    margin-right: 0.5rem;
+}
+
+.meta-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.2rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.card-author {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+}
+
+.card-status {
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    font-weight: 700;
+}
+
+.card-status.ongoing {
+    background: rgba(100, 200, 100, 0.15);
+    color: #8f8;
+}
+
+.card-status.completed {
+    background: rgba(100, 150, 255, 0.15);
+    color: #8af;
+}
+
+.card-status.hiatus {
+    background: rgba(255, 150, 100, 0.15);
+    color: #fa8;
+}
+
+/* Error Message */
+.error-message {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    animation: slideDown 0.3s ease-out;
+}
+
+.error-message span {
+    color: #fca5a5;
+    font-weight: 500;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-muted);
+}
+
+.empty-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.empty-state h3 {
+    font-size: 1.5rem;
+    color: var(--text);
+    margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+    margin-bottom: 2rem;
+    font-size: 1rem;
+}
+
+/* removed custom skeleton css */
 </style>

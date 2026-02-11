@@ -13,6 +13,9 @@ const state = reactive<State>({
     loading: false
 });
 
+// Create the computed property once at module level so it's shared across all component instances
+const isSuperuser = computed(() => state.user?.is_superuser || false);
+
 export const useAuth = () => {
     const fetchUser = async () => {
         if (!state.isAuthenticated) return;
@@ -20,6 +23,8 @@ export const useAuth = () => {
         try {
             const user = await getMe();
             state.user = user;
+            console.log('User fetched:', user); // Debug log
+            console.log('is_superuser:', user.is_superuser); // Debug log
         } catch (e) {
             // If fetch fails (likely 401 caught by interceptor), reset state
             state.user = null;
@@ -45,6 +50,6 @@ export const useAuth = () => {
         fetchUser,
         login,
         logout,
-        isSuperuser: computed(() => state.user?.is_superuser || false)
+        isSuperuser
     };
 };

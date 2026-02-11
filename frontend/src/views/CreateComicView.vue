@@ -8,8 +8,15 @@ const router = useRouter();
 const { isSuperuser, state } = useAuth();
 const title = ref('');
 const description = ref('');
+const author = ref('');
+const status = ref('ongoing');
+const statusOptions = [
+    { value: 'ongoing', label: 'Ongoing' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'hiatus', label: 'Hiatus' }
+];
 const availableGenres = [
-    'Action', 'Adventure', 'Fantasy', 'Horror', 'Romance', 'Sci-Fi', 'Mystery', 'Other'
+    'Action', 'Adventure', 'Fantasy', 'Horror', 'Romance', 'Sci-Fi', 'Mystery', 'Slice of Life', 'Other'
 ];
 const selectedGenres = ref<string[]>([]);
 const coverImage = ref<string | null>(null);
@@ -70,6 +77,11 @@ const handleSubmit = async () => {
         return;
     }
 
+    if (!author.value || !author.value.trim()) {
+        alert('Please enter an author');
+        return;
+    }
+
     if (selectedGenres.value.length === 0) {
         alert('Please select at least one genre');
         return;
@@ -83,6 +95,8 @@ const handleSubmit = async () => {
         const comic = await createComic({
             title: title.value.trim(),
             description: description.value.trim(),
+            author: author.value.trim(),
+            status: status.value,
             genres: selectedGenres.value,
             cover_image: coverImage.value
         });
@@ -116,13 +130,28 @@ const handleSubmit = async () => {
     <div v-else-if="!isSuperuser" class="permission-denied">
         <p>You do not have permission to perform this action.</p>
         <p class="small">Contact an administrator to request access.</p>
-        <RouterLink to="/" class="btn btn-primary">Go Back</RouterLink>
+        <RouterLink to="/explore" class="btn btn-primary">Go Back</RouterLink>
     </div>
 
     <form v-else @submit.prevent="handleSubmit" class="create-form">
         <div class="form-group">
             <label>Title</label>
             <input type="text" v-model="title" required />
+        </div>
+
+        <div class="form-group">
+            <label>Author</label>
+            <input type="text" v-model="author" required />
+        </div>
+
+        <div class="form-group">
+            <label>Status</label>
+            <div class="status-select">
+                <label v-for="opt in statusOptions" :key="opt.value" class="radio-label">
+                    <input type="radio" :value="opt.value" v-model="status">
+                    <span class="custom-radio">{{ opt.label }}</span>
+                </label>
+            </div>
         </div>
 
         <div class="form-group">
@@ -345,5 +374,67 @@ label {
         font-size: 0.85rem;
         padding: 0.6rem;
     }
+}
+
+.select-input {
+    width: 100%;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    color: #fff;
+    font-size: 1rem;
+    outline: none;
+    transition: all 0.2s;
+}
+
+.select-input:focus {
+    border-color: var(--primary);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+/* Status Radio Buttons */
+.status-select {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.radio-label {
+    position: relative;
+    cursor: pointer;
+}
+
+.radio-label input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.custom-radio {
+    display: inline-block;
+    padding: 0.6rem 1.2rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50px;
+    font-size: 0.9rem;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    color: #aaa;
+    user-select: none;
+}
+
+.radio-label:hover .custom-radio {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #fff;
+}
+
+.radio-label input:checked + .custom-radio {
+    background: var(--primary);
+    color: #121212;
+    border-color: var(--primary);
+    box-shadow: 0 4px 15px rgba(138, 180, 248, 0.4);
+    font-weight: 600;
 }
 </style>

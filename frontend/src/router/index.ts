@@ -10,9 +10,13 @@ const router = createRouter({
   routes: [
     {
       path: '/',
+      name: 'landing',
+      component: () => import('../views/LandingView.vue')
+    },
+    {
+      path: '/explore',
       name: 'home',
-      component: HomeView,
-      meta: { requiresAuth: true }
+      component: HomeView
     },
     {
       path: '/login',
@@ -33,8 +37,7 @@ const router = createRouter({
     {
         path: '/comic/:id',
         name: 'comic-detail',
-        component: ComicDetailView,
-        meta: { requiresAuth: true }
+        component: ComicDetailView
     }
   ],
 });

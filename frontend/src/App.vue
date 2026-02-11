@@ -40,11 +40,14 @@ onMounted(() => {
 
 <template>
   <div class="app-container">
-    <header v-if="state.isAuthenticated">
+    <header v-if="$route.path !== '/'">
       <nav>
         <div class="logo">
             <img src="./assets/logo.svg" alt="Kuebiko Logo" class="logo-img" />
-            <span>Kuebiko</span>
+            <div class="logo-text-wrapper">
+                <span>Kuebiko</span>
+                <span class="alpha-badge">ALPHA</span>
+            </div>
         </div>
         
         <!-- Mobile Menu Button -->
@@ -54,24 +57,36 @@ onMounted(() => {
         </button>
 
         <div class="nav-links" :class="{ 'active': isMenuOpen }">
-            <RouterLink to="/" @click="closeMenu">
+            <RouterLink to="/explore" @click="closeMenu">
                 <Home class="nav-icon" :size="20" /> 
-                <span class="link-text">Home</span>
+                <span class="link-text">Explore</span>
             </RouterLink>
             <!-- Only show Upload if superuser -->
-            <RouterLink v-if="isSuperuser" to="/create" @click="closeMenu">
+            <RouterLink v-if="state.isAuthenticated && isSuperuser" to="/create" @click="closeMenu">
                 <Upload class="nav-icon" :size="20" /> 
                 <span class="link-text">Upload Comic</span>
             </RouterLink>
-            <div class="user-info" v-if="state.user">
-                <User :size="18" />
-                <span class="user-email">{{ state.user.email }}</span>
-                <span v-if="isSuperuser" class="badge">Admin</span>
-            </div>
-            <button @click="handleLogout" class="logout-btn">
-                <LogOut :size="18" /> 
-                <span>Logout</span>
-            </button>
+            
+            <!-- Show user info if authenticated -->
+            <template v-if="state.isAuthenticated">
+                <div class="user-info" v-if="state.user">
+                    <User :size="18" />
+                    <span class="user-email">{{ state.user.email }}</span>
+                    <span v-if="isSuperuser" class="badge">Admin</span>
+                </div>
+                <button @click="handleLogout" class="logout-btn">
+                    <LogOut :size="18" /> 
+                    <span>Logout</span>
+                </button>
+            </template>
+            
+            <!-- Show login/register if not authenticated -->
+            <template v-else>
+                <RouterLink to="/login" @click="closeMenu" class="login-link">
+                    <User class="nav-icon" :size="20" />
+                    <span class="link-text">Login</span>
+                </RouterLink>
+            </template>
         </div>
       </nav>
     </header>
@@ -116,10 +131,11 @@ nav {
 .logo {
     display: flex;
     align-items: center;
-    gap: 0.8rem;
-    font-size: 1.5rem;
-    font-weight: 700;
+    gap: 1rem;
+    font-size: 1.75rem;
+    font-weight: 800;
     color: white;
+    letter-spacing: -0.02em;
 }
 
 .logo-img {
@@ -127,11 +143,47 @@ nav {
     width: auto;
 }
 
+.logo-text-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
 .logo span {
-    background: linear-gradient(45deg, #fff, #ccc);
+    background: linear-gradient(135deg, #ffffff 0%, #8ab4f8 50%, #a5b4fc 100%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
+    font-family: 'Inter', sans-serif;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    text-shadow: 0 0 30px rgba(138, 180, 248, 0.3);
+    position: relative;
+}
+
+.alpha-badge {
+    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    color: #000;
+    font-size: 0.6rem;
+    font-weight: 800;
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    box-shadow: 0 2px 10px rgba(251, 191, 36, 0.4);
+    -webkit-background-clip: unset;
+    background-clip: unset;
+    -webkit-text-fill-color: unset;
+    animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+    0%, 100% {
+        box-shadow: 0 2px 10px rgba(251, 191, 36, 0.4);
+    }
+    50% {
+        box-shadow: 0 2px 20px rgba(251, 191, 36, 0.6), 0 0 30px rgba(251, 191, 36, 0.3);
+    }
 }
 
 .nav-links {
@@ -140,7 +192,8 @@ nav {
     align-items: center;
 }
 
-.nav-links a {
+.nav-links a,
+.login-link {
     color: #94a3b8;
     text-decoration: none;
     transition: all 0.3s ease;
@@ -152,7 +205,8 @@ nav {
     border-radius: 8px;
 }
 
-.nav-links a:hover, .nav-links a.router-link-active {
+.nav-links a:hover, .nav-links a.router-link-active,
+.login-link:hover {
     color: #fff;
     background: rgba(255, 255, 255, 0.05);
 }
@@ -232,6 +286,17 @@ nav {
 }
 
 main {
+    padding: 0;
+    width: 100%;
+    margin: 0;
+}
+
+main:has(.landing-container) {
+    padding: 0;
+    max-width: none;
+}
+
+main > :not(.landing-container) {
     padding: 2rem;
     max-width: 1200px;
     margin: 0 auto;
@@ -284,13 +349,13 @@ main {
     }
 
     .nav-links a {
-        font-size: 1.8rem;
-        font-weight: 700;
+        font-size: 1.4rem;
+        font-weight: 600;
         color: #fff;
         opacity: 0;
         transform: translateY(20px);
         transition: all 0.3s ease;
-        padding: 1rem 2rem;
+        padding: 0.85rem 1.5rem;
         background: transparent;
     }
 
@@ -324,22 +389,22 @@ main {
         flex-direction: column;
         background: linear-gradient(145deg, rgba(30, 41, 59, 0.4), rgba(15, 23, 42, 0.6));
         border: 1px solid rgba(255, 255, 255, 0.08);
-        padding: 2rem;
-        border-radius: 24px;
+        padding: 1.5rem;
+        border-radius: 20px;
         opacity: 0;
         transform: translateY(10px);
         transition: all 0.3s ease;
-        margin-top: 2rem;
-        min-width: 260px;
+        margin-top: 1.5rem;
+        min-width: 240px;
         justify-content: center;
         box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
     }
 
     .user-info svg {
-        width: 48px;
-        height: 48px;
+        width: 40px;
+        height: 40px;
         background: rgba(255, 255, 255, 0.1);
-        padding: 10px;
+        padding: 8px;
         border-radius: 50%;
         margin-bottom: 0.5rem;
         color: #e2e8f0;
@@ -347,7 +412,7 @@ main {
     }
 
     .user-email {
-        font-size: 1.1rem;
+        font-size: 1rem;
         font-weight: 600;
         color: #f8fafc;
         margin: 0.5rem 0;

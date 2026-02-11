@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.db import engine, get_async_session
 from app.models import Base, User
 from app.api.routes_comic import router as comic_router
+from app.api.routes_chapter import router as chapter_router
 from app.users import auth_backend, fastapi_users, UserManager
 from app.schemas import UserRead, UserCreate, UserUpdate
 from fastapi_users.db import SQLAlchemyUserDatabase
@@ -17,11 +18,20 @@ from fastapi_users.db import SQLAlchemyUserDatabase
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
+from fastapi.staticfiles import StaticFiles
+import os
+
 app = FastAPI(
     title="Comic API",
     description="API for managing comics and their PDF files",
     version="1.0.0"
 )
+
+# Ensure static directory exists
+os.makedirs("static", exist_ok=True)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # CORS middleware
 # Build allowed origins list
@@ -63,6 +73,7 @@ async def validation_exception_handler(request, exc):
 
 # Include routers
 app.include_router(comic_router)
+app.include_router(chapter_router)
 
 # FastAPI Users Routers
 app.include_router(

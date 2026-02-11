@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
 from app.db import SessionLocal
-from app.models import Comic, ComicGenre
-from app.schemas import ComicCreate, ComicUpdate, ComicOut, ComicListResponse
-from app.storage import supabase_storage
-from typing import List, Optional
+from app.models import Comic, ComicStatus
+from app.schemas import ComicCreate, ComicUpdate, ComicOut, ComicListResponse, ComicOutPublic, ComicListResponsePublic
+from app.storage import storage_client
+from typing import List, Optional, Union
 import math
 
 router = APIRouter(prefix="/comics", tags=["comics"])
@@ -17,7 +17,7 @@ def get_db():
     finally:
         db.close()
 
-from app.users import current_active_user, current_superuser
+from app.users import current_active_user, current_superuser, fastapi_users
 from app.models import User
 
 @router.post("/", response_model=ComicOut, status_code=status.HTTP_201_CREATED)
@@ -26,7 +26,7 @@ def create_comic(
     db: Session = Depends(get_db),
     user: User = Depends(current_superuser)
 ):
-    """Create a new comic with JSON payload. Use POST /comics/{comic_id}/pdf to upload PDF separately."""
+    """Create a new comic."""
     
     # Check for duplicate title
     if db.query(Comic).filter(Comic.title == comic.title).first():
@@ -36,8 +36,9 @@ def create_comic(
         comic_db = Comic(
             title=comic.title,
             description=comic.description,
-            genres=','.join([g.value for g in comic.genres]),
-            pdf_url=None,
+            author=comic.author,
+            status=comic.status.value,
+            genres=comic.genres,
             cover_image_url=None
         )
         db.add(comic_db)
@@ -46,7 +47,7 @@ def create_comic(
 
         cover_url = None
         if comic.cover_image:
-            cover_url = supabase_storage.upload_base64_image(
+            cover_url = storage_client.upload_base64_image(
                 comic.cover_image,
                 comic.title,
                 comic_id=comic_db.id
@@ -55,33 +56,30 @@ def create_comic(
             db.commit()
             db.refresh(comic_db)
         
-        try:
-            genre_objs = [ComicGenre(g) for g in (comic_db.genres or "").split(',') if g]
-        except ValueError:
-            genre_objs = []
-            
-        return ComicOut(
-            id=comic_db.id,
-            title=comic_db.title,
-            description=comic_db.description,
-            genres=genre_objs,
-            pdf_url=comic_db.pdf_url or "",
-            cover_image_url=comic_db.cover_image_url
-        )
+        return comic_db
     except HTTPException:
         # Re-raise HTTPException from storage layer
         db.rollback()
         if 'cover_url' in locals() and cover_url:
             try:
-                supabase_storage.delete_file(cover_url)
+                storage_client.delete_file(cover_url)
             except:
                 pass
+        
+        # If comic was created but image upload failed, remove it to avoid orphan rows
+        try:
+            if 'comic_db' in locals() and comic_db and comic_db.id:
+                db.delete(comic_db)
+                db.commit()
+        except Exception:
+            db.rollback()
+            
         raise
     except Exception as e:
-        # Cleanup image from Supabase if DB fails
+        # Cleanup image from storage if DB fails
         if 'cover_url' in locals() and cover_url:
             try:
-                supabase_storage.delete_file(cover_url)
+                storage_client.delete_file(cover_url)
             except:
                 pass
         db.rollback()
@@ -94,15 +92,15 @@ def create_comic(
             db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to create comic: {str(e)}")
 
-@router.get("/", response_model=ComicListResponse)
+@router.get("/", response_model=ComicListResponsePublic)
 def list_comics(
     page: int = Query(1, ge=1, description="Page number"),
     items_per_page: int = Query(10, ge=1, le=100, alias="per_page", description="Items per page"),
     genres: Optional[List[str]] = Query(None, description="Filter by genres (OR logic)"),
     search: Optional[str] = Query(None, description="Search title or description"),
-    db: Session = Depends(get_db),
-    user: User = Depends(current_active_user)
+    db: Session = Depends(get_db)
 ):
+    """List comics - returns public data without image URLs"""
     try:
         query = db.query(Comic)
         
@@ -118,7 +116,10 @@ def list_comics(
         
         # Apply Genres Filter (at least one genre must match)
         if genres:
-            genre_filters = [Comic.genres.contains(g) for g in genres]
+            # For JSONB containing a list of strings, to check if it contains any of the input genres:
+            # We can use OR condition with contains for each genre.
+            # Comic.genres is a JSONB list.
+            genre_filters = [Comic.genres.contains([g]) for g in genres]
             query = query.filter(or_(*genre_filters))
             
         total_items = query.count()
@@ -129,20 +130,24 @@ def list_comics(
         
         items = []
         for comic in comics:
-            try:
-                genre_list = [ComicGenre(g) for g in (comic.genres or "").split(',') if g]
-            except ValueError:
-                genre_list = []
-            items.append(ComicOut(
+            # comic.genres is already a list from JSONB column
+            genre_list = comic.genres if comic.genres else []
+            
+            items.append(ComicOutPublic(
                 id=comic.id,
                 title=comic.title,
                 description=comic.description,
+                author=comic.author,
+                status=comic.status,
                 genres=genre_list,
-                pdf_url=comic.pdf_url,
-                cover_image_url=comic.cover_image_url
+                cover_image_url=comic.cover_image_url,
+                created_at=comic.created_at,
+                updated_at=comic.updated_at,
+                published_at=comic.published_at,
+                chapters=[] # List view doesn't need chapters or expensive join
             ))
             
-        return ComicListResponse(
+        return ComicListResponsePublic(
             items=items,
             total_comics=total_items,
             total_pages=total_pages,
@@ -154,23 +159,42 @@ def list_comics(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch comics: {str(e)}")
 
-@router.get("/{comic_id}", response_model=ComicOut)
-def get_comic(comic_id: int, db: Session = Depends(get_db), user: User = Depends(current_active_user)):
-    comic = db.query(Comic).filter(Comic.id == comic_id).first()
-    if not comic:
-        raise HTTPException(status_code=404, detail="Comic not found")
+@router.get("/{comic_id}")
+def get_comic(
+    comic_id: int, 
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(fastapi_users.current_user(optional=True))
+):
+    """Get comic details - returns full data with signed image URLs if authenticated, public data otherwise"""
     try:
-        genre_list = [ComicGenre(g) for g in (comic.genres or "").split(',') if g]
-    except ValueError:
-        genre_list = []
-    return ComicOut(
-        id=comic.id,
-        title=comic.title,
-        description=comic.description,
-        genres=genre_list,
-        pdf_url=comic.pdf_url,
-        cover_image_url=comic.cover_image_url
-    )
+        comic = db.query(Comic).options(joinedload(Comic.chapters)).filter(Comic.id == comic_id).first()
+        if not comic:
+            raise HTTPException(status_code=404, detail="Comic not found")
+        
+        # Return full data if authenticated, public data otherwise
+        if user:
+            comic_dict = ComicOut.model_validate(comic).model_dump()
+            # Sign cover image URL
+            if comic_dict.get('cover_image_url'):
+                comic_dict['cover_image_url'] = storage_client.generate_signed_url(
+                    comic_dict['cover_image_url'],
+                    expires_in=7200
+                )
+            # Sign all chapter image URLs
+            if comic_dict.get('chapters'):
+                for chapter in comic_dict['chapters']:
+                    if chapter.get('image_urls'):
+                        chapter['image_urls'] = storage_client.sign_urls_in_list(
+                            chapter['image_urls'],
+                            expires_in=7200  # 2 hours
+                        )
+            return comic_dict
+        else:
+            return ComicOutPublic.model_validate(comic)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch comic: {str(e)}")
 
 @router.put("/{comic_id}", response_model=ComicOut)
 def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends(get_db), user: User = Depends(current_superuser)):
@@ -179,7 +203,7 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
     if not comic:
         raise HTTPException(status_code=404, detail="Comic not found")
     try:
-        update_data = comic_update.dict(exclude_unset=True)
+        update_data = comic_update.model_dump(exclude_unset=True)
         
         # Check duplicate title if title is being updated
         new_title = None
@@ -189,12 +213,11 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
             if existing_comic and existing_comic.id != comic_id:
                 raise HTTPException(status_code=400, detail="A comic with this title already exists.")
 
+        # Handle explicit genres list directly
         if "genres" in update_data:
-            genres_data = update_data.pop("genres")
-            if genres_data is not None:
-                comic.genres = ','.join([g.value for g in genres_data])
-            else:
-                comic.genres = ""
+            # It's already a list of strings or None
+            # No special processing needed for JSONB if passed as list
+            pass
                 
         old_cover_url = None
         new_cover_url = None
@@ -204,8 +227,8 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
             if cover_image_b64:
                 # Use new title if being updated, otherwise use current title
                 title_for_storage = new_title if new_title else comic.title
-                # Save new image to Supabase (stable folder by ID)
-                new_cover_url = supabase_storage.upload_base64_image(
+                # Save new image to storage (stable folder by ID)
+                new_cover_url = storage_client.upload_base64_image(
                     cover_image_b64,
                     title_for_storage,
                     comic_id=comic.id
@@ -220,6 +243,9 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
                 # Remove cover
                 old_cover_url = comic.cover_image_url
                 comic.cover_image_url = None
+                
+        if "status" in update_data and update_data["status"]:
+            update_data["status"] = update_data["status"].value
 
         for key, value in update_data.items():
             setattr(comic, key, value)
@@ -227,30 +253,19 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
         db.commit()
         db.refresh(comic)
         
-        # Cleanup old image from Supabase after successful commit
+        # Cleanup old image from storage after successful commit
         if old_cover_url:
             try:
-                supabase_storage.delete_file(old_cover_url)
+                storage_client.delete_file(old_cover_url)
             except:
                 pass
                 
-        try:
-            genre_list = [ComicGenre(g) for g in (comic.genres or "").split(',') if g]
-        except ValueError:
-            genre_list = []
-        return ComicOut(
-            id=comic.id,
-            title=comic.title,
-            description=comic.description,
-            genres=genre_list,
-            pdf_url=comic.pdf_url or None,
-            cover_image_url=comic.cover_image_url
-        )
+        return comic
     except HTTPException:
         # Cleanup new file if it was created but operation failed
         if 'new_cover_url' in locals() and new_cover_url:
             try:
-                supabase_storage.delete_file(new_cover_url)
+                storage_client.delete_file(new_cover_url)
             except:
                 pass
         raise
@@ -259,135 +274,82 @@ def update_comic(comic_id: int, comic_update: ComicUpdate, db: Session = Depends
         db.rollback()
         if 'new_cover_url' in locals() and new_cover_url:
             try:
-                supabase_storage.delete_file(new_cover_url)
+                storage_client.delete_file(new_cover_url)
             except:
                 pass
         raise HTTPException(status_code=500, detail=f"Failed to update comic: {str(e)}")
 
-@router.post("/{comic_id}/pdf", status_code=200)
-async def upload_comic_pdf(
-    comic_id: int,
-    pdf: UploadFile = File(..., description="PDF file of the comic."),
-    db: Session = Depends(get_db),
-    user: User = Depends(current_superuser)
-):
-    """Upload or replace the PDF file for a comic."""
-    comic = db.query(Comic).filter(Comic.id == comic_id).first()
-    if not comic:
-        raise HTTPException(status_code=404, detail="Comic not found")
+@router.post("/batch-delete", status_code=status.HTTP_200_OK)
+def batch_delete_comics(comic_ids: List[int], db: Session = Depends(get_db), user: User = Depends(current_superuser)):
+    """Batch delete comics by IDs."""
+    if not comic_ids:
+        raise HTTPException(status_code=400, detail="No comic IDs provided")
     
-    if not pdf.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
+    if len(comic_ids) > 100:
+        raise HTTPException(status_code=400, detail="Cannot delete more than 100 comics at once")
     
-    try:
-        contents = await pdf.read()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to read PDF file: {str(e)}")
-    
-    if len(contents) == 0:
-        raise HTTPException(status_code=400, detail="Uploaded PDF is empty.")
-        raise HTTPException(status_code=400, detail="Uploaded PDF is empty.")
-    
-    max_size = 100 * 1024 * 1024  # 100MB
-    if len(contents) > max_size:
-        raise HTTPException(status_code=400, detail="PDF file too large (max 100MB).")
-    
-    if not contents.lstrip().startswith(b'%PDF'):
-        raise HTTPException(status_code=400, detail="File is not a valid PDF.")
-    
-    old_pdf_url = comic.pdf_url
-    try:
-        # Upload to Supabase in comic-specific folder
-        pdf_url = supabase_storage.upload_pdf(contents, comic.title, "comic.pdf", comic_id=comic.id)
-        
-        # Update database
-        comic.pdf_url = pdf_url
-        db.commit()
-        db.refresh(comic)
-        
-        # Remove old PDF from Supabase if exists (after successful commit)
-        if old_pdf_url:
-            try:
-                supabase_storage.delete_file(old_pdf_url)
-            except Exception:
-                pass  # Don't fail if old file can't be deleted
-        
-        return {"ok": True, "pdf_url": pdf_url}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to upload PDF: {str(e)}")
-
-@router.post("/batch-delete", status_code=status.HTTP_204_NO_CONTENT)
-def bulk_delete_comics(comic_ids: List[int], db: Session = Depends(get_db), user: User = Depends(current_superuser)):
-    """Delete multiple comics and their associated files from Supabase."""
     try:
         comics = db.query(Comic).filter(Comic.id.in_(comic_ids)).all()
         if not comics:
-            return
+            return {"message": "No comics found to delete", "deleted_count": 0}
 
-        pdf_urls = [c.pdf_url for c in comics if c.pdf_url]
         cover_urls = [c.cover_image_url for c in comics if c.cover_image_url]
+        deleted_count = len(comics)
+        deleted_ids = [c.id for c in comics]
         
-        # Delete from DB
+        # Delete from DB (this will cascade delete chapters)
         db.query(Comic).filter(Comic.id.in_(comic_ids)).delete(synchronize_session=False)
         db.commit()
         
-        # Cleanup files from Supabase
-        for pdf_url in pdf_urls:
-            try:
-                supabase_storage.delete_file(pdf_url)
-            except Exception:
-                pass
-        
+        # Delete cover images
         for cover_url in cover_urls:
             try:
-                supabase_storage.delete_file(cover_url)
-            except Exception:
-                pass
+                storage_client.delete_file(cover_url)
+            except Exception as e:
+                print(f"Failed to delete cover: {str(e)}")
 
-        # Cleanup folders to remove hierarchy
-        for comic_id in comic_ids:
+        # Delete all comic folders (includes all chapter images)
+        for comic_id in deleted_ids:
             try:
-                supabase_storage.delete_comic_folder(comic_id)
-            except Exception:
-                pass
+                storage_client.delete_comic_folder(comic_id)
+            except Exception as e:
+                print(f"Failed to delete folder for comic {comic_id}: {str(e)}")
+                
+        return {"message": f"Successfully deleted {deleted_count} comic{'s' if deleted_count > 1 else ''}", "deleted_count": deleted_count}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to batch delete comics: {str(e)}")
 
-@router.delete("/{comic_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{comic_id}", status_code=status.HTTP_200_OK)
 def delete_comic(comic_id: int, db: Session = Depends(get_db), user: User = Depends(current_superuser)):
-    """Delete a comic and its associated files from Supabase."""
-    comic = db.query(Comic).filter(Comic.id == comic_id).first()
+    """Delete a comic and its associated files from storage."""
+    comic = db.query(Comic).options(joinedload(Comic.chapters)).filter(Comic.id == comic_id).first()
     if not comic:
         raise HTTPException(status_code=404, detail="Comic not found")
     
-    pdf_url = comic.pdf_url
     cover_url = comic.cover_image_url
+    
     try:
+        # First, delete the comic from database (this will cascade delete chapters due to cascade="all, delete-orphan")
         db.delete(comic)
         db.commit()
         
-        # Remove files from Supabase after successful database deletion
-        if pdf_url:
-            try:
-                supabase_storage.delete_file(pdf_url)
-            except Exception:
-                pass  # Don't fail if file can't be deleted
-
+        # Then cleanup files from ImageKit
+        # Delete cover image
         if cover_url:
             try:
-                supabase_storage.delete_file(cover_url)
-            except Exception:
-                pass
+                storage_client.delete_file(cover_url)
+            except Exception as e:
+                print(f"Failed to delete cover image: {str(e)}")
 
-        # Remove any remaining objects in the comic folder
+        # Delete all files in the comic folder (includes all chapter images)
+        # This will recursively delete everything under /comics/{comic_id}/
         try:
-            supabase_storage.delete_comic_folder(comic_id)
-        except Exception:
-            pass
+            storage_client.delete_comic_folder(comic_id)
+        except Exception as e:
+            print(f"Failed to delete comic folder: {str(e)}")
         
-        return
+        return {"message": "Comic and associated files deleted successfully"}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to delete comic: {str(e)}")

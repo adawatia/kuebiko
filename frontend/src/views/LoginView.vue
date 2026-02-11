@@ -22,7 +22,9 @@ const handleLogin = async () => {
     // Update store state
     authLogin();
 
-    router.push('/');
+    // Redirect to intended page or default to explore
+    const redirect = router.currentRoute.value.query.redirect as string;
+    router.push(redirect || '/explore');
   } catch (e) {
     error.value = 'Invalid credentials';
     console.error(e);
