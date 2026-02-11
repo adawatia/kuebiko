@@ -32,8 +32,8 @@ const { state } = useAuth();
 
 <style scoped>
 .landing-container {
-  min-height: 100vh; /* Fallback */
-  min-height: 100dvh;
+  height: 100vh; /* Fallback */
+  height: 100dvh;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -49,6 +49,7 @@ const { state } = useAuth();
     linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   background-size: 24px 24px, 100% 100%;
   background-position: 0 0, 0 0;
+  overflow: hidden; /* Prevent scrolling */
 }
 
 .hero-section {
@@ -68,7 +69,8 @@ const { state } = useAuth();
   will-change: transform;
 }
 
-.hero-section:hover {
+.hero-section:hover,
+.hero-section:active {
   transform: rotate(0deg) scale(1.01);
 }
 
@@ -203,12 +205,10 @@ const { state } = useAuth();
 @media (max-width: 768px) {
   .hero-section {
     padding: 2rem 1.5rem;
-    transform: none; /* Remove tilt on mobile for better fit */
+    /* transform: none; Removed to keep desktop tilt */
   }
   
-  .hero-section:hover {
-      transform: none;
-  }
+  /* Removed .hero-section:hover override to keep desktop hover effect */
   
   .title {
     font-size: 2.8rem;
@@ -216,11 +216,12 @@ const { state } = useAuth();
   
   .subtitle {
     font-size: 1.2rem;
-    margin-bottom: 2.5rem;
+    margin-bottom: 2rem; /* Reduced from 2.5rem */
   }
   
   .logo-wrapper {
     animation-duration: 6s;
+    margin-bottom: 1.5rem; /* Reduced margin */
   }
   
   .logo {
@@ -229,11 +230,12 @@ const { state } = useAuth();
   
   .cta-group {
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.75rem; /* Tighter gap */
   }
   
   .btn-lg {
     width: 100%;
+    padding: 0.8rem 2rem; /* Slightly smaller padding */
   }
 }
 </style>
